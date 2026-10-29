@@ -1,8 +1,11 @@
 {
-  "id": "exemplo-001",
-  "loja": "Pizza Pizza Maracanaú",
+  "id": "teste-canal-001",
+  "loja": "TESTE Canal Maracanaú",
   "comandos": [
-    { "acao": "esperar", "ms": 500 },
-    { "acao": "ler", "max": 5000 }
+    { "acao": "ir", "url": "http://127.0.0.1:8801/avaliacoes.html" },
+    { "acao": "esperar_seletor", "seletor": ".review-card", "ms": 8000 },
+    { "acao": "rolar", "delta": 700 },
+    { "acao": "rolar", "delta": 700 },
+    { "acao": "ler", "max": 8000 }
   ]
 }
