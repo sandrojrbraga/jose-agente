@@ -1,0 +1,8 @@
+{
+  "id": "exemplo-001",
+  "loja": "Pizza Pizza Maracanaú",
+  "comandos": [
+    { "acao": "esperar", "ms": 500 },
+    { "acao": "ler", "max": 5000 }
+  ]
+}
