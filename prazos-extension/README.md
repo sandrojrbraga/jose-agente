@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.2
+# José — Tempo e taxa Saipos/iFood · v0.9.3
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -127,11 +127,11 @@ npm test
 npm run check
 ```
 
-106 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+109 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
-Com as duas sessões já logadas no mesmo perfil, escolher a loja e clicar **Vincular Saipos + iFood**, no topo. O botão identifica a cozinha pelo ID, confere a loja iFood pelo nome e associa as duas abas, de forma atômica, deixando o monitor pausado/em simulação. Não inicia login, não cria conta, não troca a unidade iFood e não altera prazos ou taxas. O diagnóstico informa ID iFood esperado, não um ID diretamente lido do cabeçalho.
+Com as duas sessões já logadas no mesmo perfil, escolher a loja e clicar **Vincular Saipos + iFood**, no topo. O botão identifica a cozinha pelo ID, confere a loja iFood pelo nome e associa as duas abas, de forma atômica, preservando o modo e o monitoramento quando a loja é a mesma; troca de loja fica pausada/em simulação. Não inicia login, não cria conta, não troca a unidade iFood e não altera prazos ou taxas. O diagnóstico informa ID iFood esperado, não um ID diretamente lido do cabeçalho.
 
 Deixar apenas uma aba da cozinha Saipos e uma aba iFood na tela de entrega. Duplicidade, ausência, loja diferente e envio pendente impedem a vinculação; não deixa apenas metade do vínculo salva. Cozinha nova precisa ser cadastrada e salva antes. Os valores do formulário em edição são mantidos e só entram na operação após Salvar cadastro e parâmetros.
 
@@ -170,3 +170,11 @@ Na aba 1668804538 relatada pelo usuário foi observado diretamente um span com n
 O leitor agora aceita ambos os formatos observados, sem inferir ID por nome ou por pedidos do Kanban. O protocolo Saipos passa de 3 para 4, para que o executor reconecte automaticamente o leitor antigo e não continue usando o código com a busca incorreta. Foram adicionadas regressões para o span direto e para um ID divergente, que continua divergente e é bloqueado pela vinculação.
 
 Na conferência somente de leitura da aba relatada, a expressão corrigida retornou ID 65416, Cozinha 0, Aguardando entrega 0 e Saiu para entrega 2. Isso confirma o formato e a identificação no DOM real; o botão da extensão atualizada ainda deve ser testado após instalação. Nenhum pedido, prazo ou taxa foi alterado.
+
+## Correção 0.9.3 — reconectar não desmarca monitoramento
+
+O botão Vincular desativava enabled e trocava mode para simulate tanto no executor quanto no formulário, mesmo após o usuário salvar a ativação. Agora, ao reconectar a mesma loja, apenas os vínculos de abas e as leituras são atualizados. O modo salvo, o estado ligado/pausado, os controles do formulário e as sequências de redução de tempo/taxa são mantidos. Clicar Vincular não inicia nem pausa monitoramento.
+
+Se a loja escolhida for diferente da loja anteriormente salva, a operação continua sendo pausada em simulação, exigindo revisão. Vinculação com erro não altera a ativação. O comando Pausar durante a leitura tem prioridade; a vinculação relê a ativação salva antes de gravar. Pendências de envio continuam bloqueando a troca de vínculos. Vincular apenas lê as páginas; as alterações reais seguem ocorrendo nos ciclos autorizados.
+
+Após instalar esta atualização, o evento de atualização ainda pausa a operação para conferência. Ativar e salvar uma vez no painel atualizado; reconectar a mesma loja depois disso não desmarca a opção. Testes automatizados cobrem executor e preservação dos campos na interface; a instalação real precisa ser conferida.

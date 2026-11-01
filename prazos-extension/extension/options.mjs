@@ -184,8 +184,9 @@ $('linkAccounts').onclick=()=>action(async()=>{
   $('linkAccounts').disabled=true;message('Conferindo e vinculando as duas abas abertas...');
   try{const target=config.targets.find(t=>t.id===config.profile.targetId),source=config.sources.find(s=>s.id===target?.sourceId);const r=await call({type:'LINK_ACCOUNTS',targetId:config.profile.targetId,saiposTabId:source?.tabId??null,ifoodTabId:target?.tabId??null});if(r.error)throw Error(r.error);
     for(const s of config.sources){const linked=r.config.sources.find(x=>x.id===s.id);if(linked)s.tabId=linked.tabId;}
-    for(const t of config.targets){const linked=r.config.targets.find(x=>x.id===t.id);if(linked){t.tabId=linked.tabId;t.enabled=linked.enabled;}}
-    config.enabled=false;config.mode='simulate';$('enabled').checked=false;$('mode').value='simulate';tabs=await call({type:'TABS'});draw();await refresh();message('Saipos e iFood vinculados e conferidos. Monitoramento pausado. Parâmetros em edição foram mantidos; revise e salve.');
+    for(const t of config.targets){const linked=r.config.targets.find(x=>x.id===t.id);if(linked){t.tabId=linked.tabId;if(!r.preserved)t.enabled=linked.enabled;}}
+    if(!r.preserved){config.enabled=r.config.enabled;config.mode=r.config.mode;$('enabled').checked=config.enabled;$('mode').value=config.mode;}
+    tabs=await call({type:'TABS'});draw();await refresh();message(r.preserved?'Saipos e iFood reconectados. Modo, monitoramento e opções em edição foram mantidos. Vincular não inicia nem pausa a operação.':'Nova loja vinculada. Monitoramento pausado; revise e salve antes de ativar.');
   }catch(e){await refresh();throw e;}finally{$('linkAccounts').disabled=false;}
 });
 

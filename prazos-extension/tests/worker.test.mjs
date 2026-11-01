@@ -61,7 +61,7 @@ test('direct iFood read works paused, reports latency and never sends write comm
 test('wrong-store iFood read replaces previous green state with explicit failure',async()=>{setup();await call({type:'READ_IFOOD'});store.config.targets[0].name='Pizza Pizza - Parangaba';const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,false);assert.match(r.error,/Loja diferente/);assert.equal(store.portal.ok,false);assert.equal(store.portal.rows,undefined);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);});
 
 test('one-click link validates both pages and binds them atomically while paused',async()=>{
- setup();store.config.sources[0].tabId=null;store.config.targets[0].tabId=null;
+ setup();store.config.enabled=false;store.config.sources[0].tabId=null;store.config.targets[0].tabId=null;
  inventory=[{id:1,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
  const r=await call({type:'LINK_ACCOUNTS',targetId:'3148479'});assert.equal(r.ok,true);assert.equal(store.config.sources[0].tabId,1);assert.equal(store.config.targets[0].tabId,2);assert.equal(store.config.enabled,false);assert.equal(store.config.mode,'simulate');assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
 });
@@ -77,3 +77,15 @@ test('confirmed time edits survive saving settings independently of rolling logs
  store.logs=[];const saved=await call({type:'SAVE',config:store.config});assert.equal(saved.ok,true);assert.equal(store.timeEdits['3148479']['0.5'].after,15);
 });
 test('failed one-click link persists exact Saipos reason in dashboard and exported tests',async()=>{setup();inventory=[];const r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/Nenhuma aba Saipos/);assert.equal(store.tests.saipos.ok,false);assert.match(store.status.sources.p8.error,/ambiente NORMAL/);assert.equal(store.config.sources[0].tabId,1);});
+
+test('relinking same store preserves enabled live configuration and reduction states',async()=>{
+ setup('live');inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];store.states={'live:3148479':{offset:20,lowerCount:1,feeOffsetCents:200,feeLowerCount:1}};const expected=structuredClone(store.states);
+ const r=await call({type:'LINK_ACCOUNTS'});assert.equal(r.preserved,true);assert.equal(store.config.enabled,true);assert.equal(store.config.mode,'live');assert.deepEqual(store.states,expected);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+});
+test('relinking never enables monitoring that was paused or changes its selected mode',async()=>{
+ setup('live');store.config.enabled=false;inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];await call({type:'LINK_ACCOUNTS'});assert.equal(store.config.enabled,false);assert.equal(store.config.mode,'live');
+});
+test('linking a different store still pauses, simulates and clears previous calculation state',async()=>{
+ setup('live');store.config.profile.targetId='3179932';store.config.targets.push({...structuredClone(store.config.targets[0]),id:'3179932',name:'Pizza Pizza - Parangaba',enabled:true});store.config.targets[0].enabled=false;store.states.x={offset:30};inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
+ const r=await call({type:'LINK_ACCOUNTS',targetId:'3148479'});assert.equal(r.preserved,false);assert.equal(store.config.enabled,false);assert.equal(store.config.mode,'simulate');assert.equal(store.config.profile.targetId,'3148479');assert.deepEqual(store.states,{});
+});

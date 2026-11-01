@@ -18,7 +18,7 @@ test('dashboard boots, reads iFood without enabling writes, and preserves unsave
   const buttons=pages.map(p=>Object.assign(new Element('button'),{dataset:{page:p.id}}));
   const document={hidden:false,getElementById:id=>{assert.ok(nodes[id],`missing control ${id}`);return nodes[id];},createElement:tag=>new Element(tag),querySelectorAll:s=>s==='.page'?pages:s==='[data-page]'?buttons:[]};
   const config=defaults(),messages=[];const state={config,logs:[],status:{},portal:null};
-  const chrome={runtime:{sendMessage:async m=>{messages.push(m);if(m.type==='STATE')return structuredClone(state);if(m.type==='TABS')return [];if(m.type==='TEST_RESULTS')return {};if(m.type==='READ_IFOOD')return {ok:false,error:'Sem aba'};throw Error('unexpected '+m.type);}}};
+  const chrome={runtime:{sendMessage:async m=>{messages.push(m);if(m.type==='STATE')return structuredClone(state);if(m.type==='TABS')return [];if(m.type==='TEST_RESULTS')return {};if(m.type==='LINK_ACCOUNTS')return {ok:true,preserved:true,config:structuredClone(state.config)};if(m.type==='READ_IFOOD')return {ok:false,error:'Sem aba'};throw Error('unexpected '+m.type);}}};
   const context={document,chrome,defaults,migrate,validate,inSchedule,connection,comparisonRows,console,setTimeout,setInterval(){},confirm(){throw Error('Unexpected confirmation');}};
   await vm.runInNewContext('(async()=>{'+source+'})()',context);
   assert.equal(nodes.message.textContent,undefined);assert.ok(messages.some(m=>m.type==='READ_IFOOD'));assert.ok(!messages.some(m=>m.type==='SAVE'||m.type==='TICK'));
@@ -26,4 +26,5 @@ test('dashboard boots, reads iFood without enabling writes, and preserves unsave
   buttons[1].onclick();assert.equal(nodes.setup.hidden,false);assert.equal(nodes.operation.hidden,true);assert.equal(nodes.parameters.hidden,true);
   nodes.profileLabel.value='Edição não salva';await nodes.readIfood.onclick();assert.equal(nodes.profileLabel.value,'Edição não salva');assert.equal(nodes.monitorState.textContent,'Pausado');
   const walk=node=>[node,...node.children.flatMap(walk)],toggle=walk(nodes.targets).find(n=>n.attributes?.role==='switch');assert.ok(toggle);assert.equal(toggle.checked,false);toggle.checked=true;toggle.onchange();const changed=walk(nodes.targets).find(n=>n.attributes?.role==='switch');assert.equal(changed.checked,true);assert.equal(changed.attributes['aria-checked'],'true');assert.equal(messages.some(m=>m.type==='SAVE'),false);
+  state.config.enabled=true;state.config.mode='live';nodes.enabled.checked=true;nodes.mode.value='live';await nodes.linkAccounts.onclick();assert.equal(nodes.enabled.checked,true);assert.equal(nodes.mode.value,'live');assert.equal(messages.some(m=>m.type==='SAVE'),false);
 });

@@ -173,10 +173,13 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         const preferred=m.ifoodTabId??t.tabId;const matched=Number.isInteger(preferred)?tabs.filter(x=>x.id===preferred):tabs;const portalTabs=matched.length?matched:tabs.length===1?tabs:[];
         if(portalTabs.length!==1)throw Error('Escolha uma aba iFood válida deste ambiente em Cadastro. Há '+tabs.length+' aba(s) de entrega disponíveis.');
         const inspected=auditIfood(await send(portalTabs[0].id,{type:'JOSE_INSPECT'}),t,null,c);
-        source.tabId=kitchen.tabId;t.tabId=portalTabs[0].id;c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);
+        const changedStore=c.profile.targetId!==t.id;
+        source.tabId=kitchen.tabId;t.tabId=portalTabs[0].id;
+        if(changedStore){c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);}
+        else{const latest=await get();c.enabled=latest.config.enabled;c.mode=latest.config.mode;} // Pausar durante a leitura continua tendo prioridade.
         const portal={...inspected,targetId:t.id,tabId:t.tabId,latencyMs:Date.now()-start};
-        await storage.set({config:validate(c),states:{},portal,status:{at:Date.now(),message:'Duas abas vinculadas. Monitoramento pausado para conferência.',sources:{[source.id]:{...kitchen,age:demand(kitchen,c)}},results:[]}});
-        return {ok:true,config:c};
+        await storage.set({config:validate(c),states:changedStore?{}:d.states,portal,status:{...d.status,at:Date.now(),message:changedStore?'Nova loja vinculada. Monitoramento pausado para revisão.':'Mesma loja reconectada. Modo e monitoramento salvos foram mantidos.',sources:{[source.id]:{...kitchen,age:demand(kitchen,c)}},results:changedStore?[]:d.status.results||[]}});
+        return {ok:true,config:c,preserved:!changedStore};
       }finally{running=false;}
     }
     if(m.type==='TEST_SAIPOS'||m.type==='TEST_IFOOD'){
