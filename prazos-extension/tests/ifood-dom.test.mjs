@@ -70,22 +70,24 @@ test('CSS-hidden Portal dialogs with layout rectangles are not treated as visibl
  assert.equal(hidden.getClientRects().length,1);assert.equal(window.JoseIfoodDom.visible(hidden),false);
  assert.equal(window.JoseIfoodDom.visible({...visible,style:{display:'flex',visibility:'visible',opacity:'1'}}),true);
 });
-async function menuScenario({initiallyOpen=false,unknown=false,backdropMissing=false}={}){
+async function menuScenario({initiallyOpen=false,unknown=false,backdropMissing=false,toastMode=null}={}){
  let menuOpen=initiallyOpen,selectorOpen=false,closed=0,writes=0,saves=0,listener;
+ const statuses=toastMode==='stale'?[{...visible,innerText:'Taxa e tempo alterados com sucesso!'}]:[];
  const window={},label={innerText:'Pizza Pizza - Maraponga'};
  const backdrop={...visible,click(){menuOpen=false;closed++;}};
  const menu={getClientRects:()=>menuOpen?[{}]:[],querySelector:()=>backdropMissing?null:backdrop};
  const searchDialog={getClientRects:()=>selectorOpen?[{}]:[]};
  const hiddenDialog={...visible,style:{display:'flex',visibility:'hidden',opacity:'0'}};
- const save={...visible,innerText:'Salvar',disabled:true,click(){assert.equal(menuOpen,false);assert.equal(selectorOpen,false);saves++;this.disabled=true;}};
+ const save={...visible,innerText:'Salvar',disabled:true,click(){assert.equal(menuOpen,false);assert.equal(selectorOpen,false);saves++;this.disabled=!toastMode;if(toastMode==='fresh')statuses.push({...visible,innerText:'Taxa e tempo alterados com sucesso!'});}};
  class Input{constructor(value){this._value=value;this.disabled=false;}get value(){return this._value;}set value(v){this._value=v;}dispatchEvent(){}blur(){if(this!==search){assert.equal(menuOpen,false);assert.equal(selectorOpen,false);writes++;}save.disabled=false;}}
  const time=new Input('19'),fee=new Input('6,99'),search=new Input('');
  const header={...visible,innerText:label.innerText,querySelector:()=>label,click(){menuOpen=!menuOpen;}};label.closest=()=>header;
  const swap={getClientRects:()=>menuOpen?[{}]:[],innerText:'Trocar loja',closest:()=>menu,click(){menuOpen=false;selectorOpen=true;}};
  const option={getClientRects:()=>selectorOpen?[{}]:[],innerText:'Pizza Pizza - Maraponga ID 3148479',click(){selectorOpen=false;menuOpen=true;save.disabled=true;}};
  const row={...visible,innerText:'0.5 km',querySelector:s=>s.includes('.time')?time:fee};
- const document={querySelector:s=>s.includes('status-indicator-v2')?header:s.includes('restaurant-profile-name')?label:s.includes('Busque pelo nome ou ID')?search:null,querySelectorAll:s=>s==='button'?[header,swap,save]:s==='[role="option"]'?[option]:s==='[aria-label="table-row"]'?[row]:s==='[role="dialog"][aria-modal="true"]'?[menu,searchDialog,hiddenDialog,...(unknown?[visible]:[])]:[]};
+ const document={querySelector:s=>s.includes('status-indicator-v2')?header:s.includes('restaurant-profile-name')?label:s.includes('Busque pelo nome ou ID')?search:null,querySelectorAll:s=>s==='button'?[header,swap,save]:s==='[role="option"]'?[option]:s==='[aria-label="table-row"]'?[row]:s==='[role="dialog"][aria-modal="true"]'?[menu,searchDialog,hiddenDialog,...(unknown?[visible]:[])]:s==='[role="status"], [role="alert"]'?statuses:[]};
  const context={window,document,HTMLInputElement:Input,Event:class{},getComputedStyle:e=>e.style||{display:'block',visibility:'visible',opacity:'1'},location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f,removeListener(){}}}},setTimeout:f=>setTimeout(f,0)};
+ if(toastMode==='stale'){let clock=Date.now();context.Date={now:()=>clock+=1000};}
  vm.runInNewContext(helper,context);vm.runInNewContext(content,context);
  const result=await new Promise(resolve=>listener({type:'JOSE_EXECUTE',expiresAt:Date.now()+60000,target:{id:'3148479',name:label.innerText,profilePinned:true,feeMode:'preserve',semanticsConfirmed:true,maxMinutes:120,maxFee:30,adjustStepMinutes:3},rows:[{km:.5,minutes:22,fee:6.99}]},{id:'test'},resolve));
  return {result,menuOpen,closed,writes,saves};
@@ -100,4 +102,11 @@ test('unrecognized modal and status menu without recognized backdrop block befor
  for(const opts of [{unknown:true},{initiallyOpen:true,backdropMissing:true}]){
   const r=await menuScenario(opts);assert.ok(r.result.error);assert.equal(r.writes,0);assert.equal(r.saves,0);
  }
+});
+
+test('real Portal success notification confirms submission even when Save remains enabled',async()=>{
+ const r=await menuScenario({toastMode:'fresh'});assert.equal(r.result.ok,true);assert.equal(r.saves,1);assert.equal(r.result.submitted,true);
+});
+test('a pre-existing success notification never confirms a new uncertain command',async()=>{
+ const r=await menuScenario({toastMode:'stale'});assert.equal(r.result.ok,undefined);assert.equal(r.result.uncertain,true);assert.match(r.result.error,/Sem confirmação/);assert.equal(r.saves,1);
 });

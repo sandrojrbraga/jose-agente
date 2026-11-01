@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.8
+# José — Tempo e taxa Saipos/iFood · v0.9.9
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -236,3 +236,14 @@ O leitor agora considera visibility/display/opacity. Antes de abrir o seletor de
 A verificação do ID continua em cada execução; não foi removida em favor de confiar apenas no nome. Inspeção e revalidação continuam sem cliques no seletor. Protocolo iFood 9 força a atualização do leitor nas abas antigas.
 
 Testes simulam diálogo com visibility:hidden mas retângulo de layout, menu remanescente após selecionar ID, menu aberto no início do ciclo, fundo ausente e janela desconhecida. Não foram alterados tempos ou taxas no Portal durante esta inspeção. A correção de DOM ainda precisa de validação instalada com ciclos consecutivos. Atualizar a mesma instalação sem remover; atualização pausa a operação e preserva dados normais.
+
+
+## Correção 0.9.9 — mensagem real de sucesso, não apenas botão desabilitado
+
+O diagnóstico 0.9.8 mostrou envio tentado, campos válidos, botão Salvar ainda habilitado e um diálogo ativo. Na validação assistida do Portal, a tabela coincidiu integralmente com o comando pendente. Após fechar o menu pelo fundo e clicar Salvar, o Portal exibiu Taxa e tempo alterados com sucesso!, porém o botão permaneceu habilitado. A exigência de botão desabilitado era, portanto, insuficiente e produzia timeout mesmo diante de sucesso. Recarregamos a página e conferimos as dez faixas e taxas persistidas; nesse estado o botão ficou desabilitado.
+
+A extensão agora aceita uma nova mensagem de sucesso visível em status/alert como confirmação de submissão, além do estado desabilitado. Uma notificação anterior não confirma o novo comando. O worker continua obrigatoriamente recarregando e comparando todos os valores antes de registrar confirmação, sem duplicar o envio. Protocolo do leitor iFood 10.
+
+O fechamento do menu espera visibility:hidden/display:none, não apenas opacity:0, para respeitar a animação. Se o menu reaparecer após o clique Salvar, fecha apenas esse menu conhecido sem clicar Salvar outra vez. Janelas desconhecidas não são aceitas/canceladas automaticamente.
+
+Testes novos reproduzem sucesso com botão habilitado e notificação antiga incapaz de confirmar novo comando. O teste assistido confirmou o salvamento pendente; não equivale à validação contínua da extensão 0.9.9 instalada. Atualize a mesma instalação, sem removê-la. Atualização pausa a operação; preserve configurações e pendências normais.

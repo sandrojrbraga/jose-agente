@@ -1,11 +1,12 @@
 (() => {
-  if(window.joseIfoodVersion===9)return;
+  if(window.joseIfoodVersion===10)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=9;
+  window.joseIfoodVersion=10;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>window.JoseIfoodDom.visible(e);
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
   const normalized=s=>s.trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
+  const successNodes=()=>[...document.querySelectorAll('[role="status"], [role="alert"]')].filter(e=>visible(e)&&text(e).includes('Taxa e tempo alterados com sucesso!'));
   const button=label=>[...document.querySelectorAll('button')].find(e=>visible(e)&&text(e)===label);
   const header=()=>window.JoseIfoodDom.header(document);
   const storeName=()=>window.JoseIfoodDom.name(header());
@@ -34,15 +35,20 @@
   function checkHeader(target){
     if(!header()||normalized(storeName())!==normalized(target.name))throw Error('A loja selecionada mudou. Operação interrompida.');
   }
-  const activeDialogs=()=>[...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].filter(visible);
+  const dialogOpen=e=>{
+    if(!e||!e.getClientRects().length)return false;
+    if(typeof getComputedStyle!=='function')return true;
+    const style=getComputedStyle(e);return style.visibility!=='hidden'&&style.visibility!=='collapse'&&style.display!=='none';
+  };
+  const activeDialogs=()=>[...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].filter(dialogOpen);
   const swapButton=()=>[...document.querySelectorAll('button')].find(e=>visible(e)&&text(e).includes('Trocar loja'));
   async function closeStoreMenu(){
     const menu=swapButton()?.closest?.('[role="dialog"]');
-    if(!visible(menu))return;
+    if(!dialogOpen(menu))return;
     const backdrop=menu.querySelector('[role="presentation"]');
     if(!visible(backdrop))throw Error('Menu da loja aberto sem controle de fechamento reconhecido. Feche o menu para continuar.');
     backdrop.click();
-    await until(()=>!visible(menu),'O menu da loja não fechou. Nenhum valor será preenchido.');
+    await until(()=>!dialogOpen(menu),'O menu da loja não fechou. Nenhum valor será preenchido.');
   }
   function ensureNoDialog(){if(activeDialogs().length)throw Error('Há uma janela sobre a tela de entrega. Feche-a antes do ajuste.');}
   async function selectTarget(t){
@@ -91,8 +97,12 @@
       if(document.querySelector('input[aria-invalid="true"]'))throw Error('O Portal rejeitou um dos valores.');
       const save=button('Salvar');if(!save||save.disabled)throw Error('Botão Salvar não está disponível.');
       if(Date.now()>m.expiresAt)throw Error('Cálculo vencido no salvamento.');
+      const previousSuccess=new Set(successNodes());
       submitted=true;save.click();
-      await until(()=>button('Salvar')?.disabled,'Sem confirmação de salvamento.');
+      await closeStoreMenu();
+      // No Portal real, o botão pode continuar habilitado depois da mensagem de sucesso.
+      // O worker ainda recarrega a página e compara cada valor antes de confirmar.
+      await until(()=>button('Salvar')?.disabled||successNodes().some(e=>!previousSuccess.has(e)),'Sem confirmação de salvamento.');
       checkHeader(m.target);
       return {ok:true,submitted:true,storeId:m.target.id,expected,before:publicRows(before)};
     } catch(e){
@@ -104,7 +114,7 @@
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {readerVersion:9,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:10,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ'){checkHeader(m.target);const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal.');return {ok:true,rows:publicRows(readRows())};}
       if(m.type==='JOSE_VERIFY'){
         checkHeader(m.target);

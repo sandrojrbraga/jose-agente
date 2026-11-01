@@ -17,7 +17,7 @@ globalThis.chrome={
     if(m.type==='SAIPOS_READ')return {readerVersion:4,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:verificationOk};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:9,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:10,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
     throw Error('Unexpected message');
   }}
 };
