@@ -31,7 +31,7 @@ function draw(){
     select(registration,'Aba Configurações de entrega',t.tabId,tabChoices('https://portal.ifood.com.br/'),v=>t.tabId=v?Number(v):null);
     $('registration').append(registration);
     select(grid,'1 · Regra de ajuste automático',t.timeMode,[['volume','Quantidade de pedidos → minutos do patamar'],['oldest','Tempo do pedido mais antigo']],v=>{t.timeMode=v;t.semanticsConfirmed=false;draw();});
-    select(grid,'2 · Onde medir a fila',t.volumeMetric,[['kitchen','Somente Cozinha'],['waiting','Cozinha + Aguardando entrega']],v=>{t.volumeMetric=v;t.semanticsConfirmed=false;draw();});
+    select(grid,'2 · Onde medir a fila',t.volumeMetric,[['kitchen','Somente Cozinha'],['waiting','Cozinha + Aguardando · somente entregas']],v=>{t.volumeMetric=v;t.semanticsConfirmed=false;draw();});
     const average=field(grid,'3 · Tempo médio de entrega · X minutos',t.averageDeliveryMinutes,v=>{t.averageDeliveryMinutes=v;draw();},'number');average.min=1;average.step=1;
     const step=field(grid,'4 · Ajustar cada distância em até X min por ciclo',t.adjustStepMinutes,v=>{t.adjustStepMinutes=v;draw();},'number');step.min=1;step.max=60;step.step=1;
     field(grid,'Limite máximo de prazo (min)',t.maxMinutes,v=>t.maxMinutes=v,'number');
@@ -40,7 +40,7 @@ function draw(){
     card.append(grid);
     const formula=t.timeMode==='volume'?'QUANTIDADE da fila escolhida → PREPARO EM MINUTOS do patamar':'MAIOR TEMPO no campo “Desde” dos cartões da fila escolhida';
     const explanation=el('p',formula+' + '+t.averageDeliveryMinutes+' min de ENTREGA MÉDIA + ADICIONAL DE DISTÂNCIA = META. O próximo envio aproxima o valor atual dessa meta em até '+t.adjustStepMinutes+' min por ciclo.');explanation.className='formula';card.append(explanation);
-    card.append(el('p',t.timeMode==='volume'?'A quantidade não é tratada como minutos. Configure abaixo quantos minutos de preparo correspondem a cada volume.':'O campo “Desde” mede a permanência na etapa atual; não é o tempo total desde a compra. Em Cozinha + Aguardando, usa o maior desses tempos.'));
+    card.append(el('p',t.timeMode==='volume'?'A quantidade não é tratada como minutos. Configure abaixo quantos minutos de preparo correspondem a cada volume.':'O campo “Desde” mede a permanência na etapa atual; não é o tempo total desde a compra. Em Cozinha + Aguardando, usa o maior desses tempos e exclui retirada/consumo interno somente de Aguardando.'));
     field(card,'Habilitar este destino',t.enabled,v=>t.enabled=v,'checkbox');
     field(card,'Confirmei que Tempo é o prazo total e que entrega + preparo não duplica outro ajuste',t.semanticsConfirmed,v=>t.semanticsConfirmed=v,'checkbox');
     card.append(el('h3','Adicional por distância e taxa-base'));
@@ -130,7 +130,7 @@ function renderOverview(d){
   for(const row of comparisonRows(current,planned,planned?result.desiredRows:null,[...edits,...d.logs],target?.id)){
     const tr=el('tr');for(const value of [row.km+' km',row.current,row.desired,row.proposed,row.before,row.after,row.editedAt,row.label])tr.append(el('td',value));$('comparison').append(tr);
   }
-  const bd=result?.breakdown;$('calculation').textContent=bd?`${bd.mode==='volume'?'Quantidade '+bd.volume+' → patamar de '+bd.desiredPreparationMinutes+' min':'Maior tempo na etapa: '+bd.oldestMinutes+' min'} · fila: ${bd.scope==='waiting'?'Cozinha + Aguardando':'Cozinha'} + entrega média ${bd.deliveryAverage} min + adicional por distância. Preparo após redução gradual: ${bd.preparationMinutes} min. Passo máximo: ${bd.step} min por ciclo.`:'Execute uma consulta para ver cada parcela da conta.';
+  const bd=result?.breakdown;$('calculation').textContent=bd?`${bd.mode==='volume'?'Quantidade '+bd.volume+' → patamar de '+bd.desiredPreparationMinutes+' min':'Maior tempo na etapa: '+bd.oldestMinutes+' min'} · fila: ${bd.scope==='waiting'?'Cozinha + Aguardando (só entregas)':'Cozinha'} + entrega média ${bd.deliveryAverage} min + adicional por distância. Preparo após redução gradual: ${bd.preparationMinutes} min. Passo máximo: ${bd.step} min por ciclo.${bd.scope==='waiting'?' Aguardando: '+bd.waitingIncluded+' entregas incluídas; '+bd.waitingExcluded+' retirada/consumo excluídos.':''}`:'Execute uma consulta para ver cada parcela da conta.';
   $('comparisonNote').textContent=result?.error?result.error:!current?'Leia o iFood para ver os valores atuais da loja.':!planned?'Clique Consultar e calcular agora para comparar com os parâmetros salvos.':saved.mode==='simulate'?'Simulação: comparação somente de leitura.':'Comparação das últimas leituras. Confira o registro da última alteração acima.';
 }
 let liveRefresh=false,portalTask=null;

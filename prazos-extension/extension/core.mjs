@@ -153,6 +153,15 @@ export function plan(target,offset,feeOffset=0) {
 }
 
 // Todas as regras são absolutas sobre a base, nunca sobre o último valor do Portal.
+export function eligibleWaiting(snapshot){
+  const w=snapshot.waiting;
+  if(!w?.complete||w.error)fail(w?.error||'Leitura completa de Aguardando entrega necessária para excluir retirada e consumo interno.');
+  const stage=snapshot.stages?.filter(s=>s.stage==='Aguardando entrega');
+  if(stage?.length!==1||stage[0].count!==w.count||!Array.isArray(w.cards)||w.cards.length!==w.count)fail('Contador de aguardando entrega ausente ou inconsistente.');
+  if(w.cards.some(card=>!['delivery','pickup','internal'].includes(card.fulfillment)))fail('Tipo de pedido não identificado em Aguardando entrega. Não é possível excluir retirada/consumo com segurança.');
+  const cards=w.cards.filter(card=>card.fulfillment==='delivery');
+  return {...w,cards,count:cards.length,excludedCount:w.count-cards.length};
+}
 export function volumeRule(target,snapshot){
   let volume=snapshot.count;
   if(!Number.isInteger(volume)||volume<0)fail('Contador de volume inválido.');
@@ -160,7 +169,7 @@ export function volumeRule(target,snapshot){
     const stages=snapshot.stages||[];
     const kitchen=stages.filter(s=>s.stage==='Cozinha'),waiting=stages.filter(s=>s.stage==='Aguardando entrega');
     if(kitchen.length!==1||kitchen[0].count!==volume||waiting.length!==1||!Number.isInteger(waiting[0].count)||waiting[0].count<0)fail('Contador de aguardando entrega ausente ou inconsistente.');
-    volume+=waiting[0].count;
+    volume+=eligibleWaiting(snapshot).count;
   }
   const rule=[...(target.volumeRules||[])].reverse().find(r=>volume>=r.minOrders);
   return {volume,threshold:rule?.minOrders??null,extraMinutes:rule?.extraMinutes||0,extraFee:rule?.extraFee||0};
@@ -191,10 +200,7 @@ export function timeContribution(target,productionMinutes,rule){
 
 export function selectedAge(target,snapshot,c,now=Date.now(),kitchenAge=demand(snapshot,c,now)){
   if(target.timeMode==='volume'||target.volumeMetric!=='waiting')return kitchenAge;
-  const w=snapshot.waiting;
-  if(!w?.complete||w.error)fail(w?.error||'Leitura completa de Aguardando entrega necessária para calcular a idade.');
-  const stage=snapshot.stages?.find(s=>s.stage==='Aguardando entrega');
-  if(!stage||stage.count!==w.count)fail('Contador de Aguardando entrega inconsistente.');
+  const w=eligibleWaiting(snapshot);
   return Math.max(kitchenAge,demand({...snapshot,...w,capturedAt:snapshot.capturedAt},c,now));
 }
 // Um passo por ciclo, a partir do valor realmente lido no Portal.

@@ -70,8 +70,8 @@ test('CSS-hidden Portal dialogs with layout rectangles are not treated as visibl
  assert.equal(hidden.getClientRects().length,1);assert.equal(window.JoseIfoodDom.visible(hidden),false);
  assert.equal(window.JoseIfoodDom.visible({...visible,style:{display:'flex',visibility:'visible',opacity:'1'}}),true);
 });
-async function menuScenario({initiallyOpen=false,unknown=false,backdropMissing=false,toastMode=null}={}){
- let menuOpen=initiallyOpen,selectorOpen=false,closed=0,writes=0,saves=0,listener;
+async function menuScenario({initiallyOpen=false,unknown=false,backdropMissing=false,toastMode=null,expireDuringDelay=false}={}){
+ let menuOpen=initiallyOpen,selectorOpen=false,closed=0,writes=0,saves=0,listener;const delays=[];let clockNow=Date.now();
  const statuses=toastMode==='stale'?[{...visible,innerText:'Taxa e tempo alterados com sucesso!'}]:[];
  const window={},label={innerText:'Pizza Pizza - Maraponga'};
  const backdrop={...visible,click(){menuOpen=false;closed++;}};
@@ -86,11 +86,12 @@ async function menuScenario({initiallyOpen=false,unknown=false,backdropMissing=f
  const option={getClientRects:()=>selectorOpen?[{}]:[],innerText:'Pizza Pizza - Maraponga ID 3148479',click(){selectorOpen=false;menuOpen=true;save.disabled=true;}};
  const row={...visible,innerText:'0.5 km',querySelector:s=>s.includes('.time')?time:fee};
  const document={querySelector:s=>s.includes('status-indicator-v2')?header:s.includes('restaurant-profile-name')?label:s.includes('Busque pelo nome ou ID')?search:null,querySelectorAll:s=>s==='button'?[header,swap,save]:s==='[role="option"]'?[option]:s==='[aria-label="table-row"]'?[row]:s==='[role="dialog"][aria-modal="true"]'?[menu,searchDialog,hiddenDialog,...(unknown?[visible]:[])]:s==='[role="status"], [role="alert"]'?statuses:[]};
- const context={window,document,HTMLInputElement:Input,Event:class{},getComputedStyle:e=>e.style||{display:'block',visibility:'visible',opacity:'1'},location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f,removeListener(){}}}},setTimeout:f=>setTimeout(f,0)};
+ const context={window,document,HTMLInputElement:Input,Event:class{},getComputedStyle:e=>e.style||{display:'block',visibility:'visible',opacity:'1'},location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f,removeListener(){}}}},setTimeout:(f,ms)=>{delays.push(ms);if(expireDuringDelay)clockNow+=ms;return setTimeout(f,0);}};
+ if(expireDuringDelay)context.Date={now:()=>clockNow};
  if(toastMode==='stale'){let clock=Date.now();context.Date={now:()=>clock+=1000};}
  vm.runInNewContext(helper,context);vm.runInNewContext(content,context);
- const result=await new Promise(resolve=>listener({type:'JOSE_EXECUTE',expiresAt:Date.now()+60000,target:{id:'3148479',name:label.innerText,profilePinned:true,feeMode:'preserve',semanticsConfirmed:true,maxMinutes:120,maxFee:30,adjustStepMinutes:3},rows:[{km:.5,minutes:22,fee:6.99}]},{id:'test'},resolve));
- return {result,menuOpen,closed,writes,saves};
+ const result=await new Promise(resolve=>listener({type:'JOSE_EXECUTE',expiresAt:Date.now()+(expireDuringDelay?2500:60000),target:{id:'3148479',name:label.innerText,profilePinned:true,feeMode:'preserve',semanticsConfirmed:true,maxMinutes:120,maxFee:30,adjustStepMinutes:3},rows:[{km:.5,minutes:22,fee:6.99}]},{id:'test'},resolve));
+ return {result,menuOpen,closed,writes,saves,delays};
 }
 test('store menu remaining open after ID selection closes before filling or saving',async()=>{
  const r=await menuScenario();assert.equal(r.result.ok,true);assert.equal(r.closed,1);assert.equal(r.menuOpen,false);assert.equal(r.writes,1);assert.equal(r.saves,1);
@@ -109,4 +110,11 @@ test('real Portal success notification confirms submission even when Save remain
 });
 test('a pre-existing success notification never confirms a new uncertain command',async()=>{
  const r=await menuScenario({toastMode:'stale'});assert.equal(r.result.ok,undefined);assert.equal(r.result.uncertain,true);assert.match(r.result.error,/Sem confirmação/);assert.equal(r.saves,1);
+});
+
+test('every automated iFood click waits 3000 ms, including store menu and Save',async()=>{
+ const r=await menuScenario({initiallyOpen:true});assert.equal(r.result.ok,true);assert.equal(r.delays.filter(ms=>ms===3000).length,r.closed+r.saves+3);
+});
+test('source expiring during click delay aborts before selector or write',async()=>{
+ const r=await menuScenario({expireDuringDelay:true});assert.match(r.result.error,/venceu/);assert.equal(r.saves,0);assert.equal(r.writes,0);assert.equal(r.closed,0);
 });

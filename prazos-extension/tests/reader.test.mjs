@@ -22,9 +22,18 @@ test('waiting column exports only clocks and IDs when complete; partial waiting 
 test('regression: anonymous Saipos has tooltip on header span itself, not on a child',()=>{
  const doc=fixture({missingId:true}),original=doc.querySelector;
  doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:name=>name==='uib-tooltip'?'Pizza Pizza 08 [65416]':null}:original(q);
- const snapshot=read(doc);assert.equal(snapshot.storeId,'65416');assert.equal(snapshot.readerVersion,4);assert.equal(snapshot.count,1);
+ const snapshot=read(doc);assert.equal(snapshot.storeId,'65416');assert.equal(snapshot.readerVersion,5);assert.equal(snapshot.count,1);
 });
 test('header with a different kitchen ID never falls back to expected P8 ID',()=>{
  const doc=fixture(),original=doc.querySelector;doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:()=> 'Outra cozinha [99999]'}:original(q);
  assert.equal(read(doc).storeId,'99999');
+});
+
+test('rendered Saipos type separates delivery and pickup even when both have Delivery icon',()=>{
+ for(const [type,label,expected] of [['1','','delivery'],['2','Balcão','pickup'],[null,'Consumo interno','internal'],[null,'','unknown']]){
+  const doc=fixture(),headings=doc.querySelectorAll();
+  const card={innerText:'31/out, 20:20 (50m)\nDesde 20:50 (20m)\n'+label,querySelector:()=>({id:'waiting-1'}),querySelectorAll:()=>type?[{getAttribute:()=> 'sale.id_sale_type == '+type}]:[]};
+  headings[1].parentElement={querySelector:()=>({innerText:'1'}),querySelectorAll:()=>[card]};
+  assert.equal(read(doc).waiting.cards[0].fulfillment,expected);
+ }
 });

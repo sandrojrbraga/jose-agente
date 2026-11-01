@@ -1,10 +1,28 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {defaults,adjustment,stepRows,migrate,validate} from '../extension/core.mjs';
 const now=Date.parse('2026-11-01T00:30:00Z');
-const s=()=>({capturedAt:now,complete:true,count:1,cards:[{id:'a',created:'31/out, 21:20',since:'Desde 21:20 (10m)'}],stages:[{stage:'Cozinha',count:1},{stage:'Aguardando entrega',count:1}],waiting:{complete:true,count:1,cards:[{id:'b',created:'31/out, 20:50',since:'Desde 21:00 (30m)'}]}});
+const s=()=>({capturedAt:now,complete:true,count:1,cards:[{id:'a',created:'31/out, 21:20',since:'Desde 21:20 (10m)'}],stages:[{stage:'Cozinha',count:1},{stage:'Aguardando entrega',count:1}],waiting:{complete:true,count:1,cards:[{id:'b',fulfillment:'delivery',created:'31/out, 20:50',since:'Desde 21:00 (30m)'}]}});
 test('oldest of both queues includes waiting stage clocks; kitchen-only excludes waiting',()=>{const c=defaults(),t=c.targets.find(t=>t.enabled);assert.equal(adjustment(t,s(),{},c,now).productionMinutes,10);t.volumeMetric='waiting';const a=adjustment(t,s(),{},c,now);assert.equal(a.productionMinutes,30);assert.equal(a.rows[0].minutes,45);assert.equal(a.rows[1].minutes,50);});
 test('partial waiting cards block combined age without blocking kitchen-only age',()=>{const c=defaults(),t=c.targets.find(t=>t.enabled),snapshot=s();snapshot.waiting.complete=false;assert.doesNotThrow(()=>adjustment(t,snapshot,{},c,now));t.volumeMetric='waiting';assert.throws(()=>adjustment(t,snapshot,{},c,now),/Leitura completa/);});
-test('quantity combines counts without adding oldest age and works with incomplete waiting cards',()=>{const c=defaults(),t=c.targets.find(t=>t.enabled);t.timeMode='volume';t.volumeMetric='waiting';t.volumeRules=[{minOrders:2,extraMinutes:20,extraFee:0}];const snapshot=s();snapshot.waiting.complete=false;const a=adjustment(t,snapshot,{},c,now);assert.equal(a.volume,2);assert.equal(a.rows[0].minutes,35);});
+test('quantity requires complete classified waiting cards to exclude non-delivery orders',()=>{const c=defaults(),t=c.targets.find(t=>t.enabled);t.timeMode='volume';t.volumeMetric='waiting';t.volumeRules=[{minOrders:2,extraMinutes:20,extraFee:0}];const snapshot=s();snapshot.waiting.complete=false;assert.throws(()=>adjustment(t,snapshot,{},c,now),/Leitura completa/);snapshot.waiting.complete=true;const a=adjustment(t,snapshot,{},c,now);assert.equal(a.volume,2);assert.equal(a.rows[0].minutes,35);});
 test('each radius moves at most configured step, never overshoots target',()=>{const desired=[{km:.5,minutes:45},{km:1,minutes:50}],current=[{km:.5,minutes:25},{km:1,minutes:52}];assert.deepEqual(stepRows(desired,current,5).map(r=>r.minutes),[30,50]);assert.throws(()=>stepRows(desired,[],5),/Faixas/);});
 test('retained reduction state cannot cause increases after demand has fallen below current time',()=>{const retained=[{km:.5,minutes:40}],current=[{km:.5,minutes:25}],instant=[{km:.5,minutes:15}];assert.equal(stepRows(retained,current,5,instant)[0].minutes,25);});
 test('v5 migration retains delivery bases as average plus distance and pauses new calculations',()=>{const c=defaults();c.version=5;c.enabled=true;c.mode='live';for(const t of c.targets){t.deliveryMode='bands';t.bands.forEach(b=>delete b.distanceMinutes);delete t.adjustStepMinutes;}c.targets.find(t=>t.enabled).bands[0].minutes=19;const m=migrate(c),t=m.targets.find(t=>t.enabled);assert.equal(m.mode,'simulate');assert.equal(m.enabled,false);assert.equal(t.averageDeliveryMinutes,19);assert.equal(t.bands[0].distanceMinutes,0);assert.equal(t.bands[1].distanceMinutes,1);assert.doesNotThrow(()=>validate(m));});
+
+test('sum mode excludes pickup/internal only from waiting, including oldest age and volume',()=>{
+ const c=defaults(),t=c.targets.find(t=>t.enabled),snapshot=s();
+ snapshot.cards[0].fulfillment='pickup'; // Kitchen pickup still contributes its 10 minutes.
+ snapshot.waiting.cards.push({id:'pickup',fulfillment:'pickup',created:'31/out, 20:00',since:'Desde 20:00 (90m)'},{id:'internal',fulfillment:'internal',created:'31/out, 20:00',since:'Desde 20:00 (90m)'});
+ snapshot.waiting.count=3;snapshot.stages[1].count=3;t.volumeMetric='waiting';
+ let a=adjustment(t,snapshot,{},c,now);assert.equal(a.productionMinutes,30);assert.equal(a.volume,2);
+ t.timeMode='volume';t.volumeRules=[{minOrders:2,extraMinutes:15},{minOrders:4,extraMinutes:50}];a=adjustment(t,snapshot,{},c,now);assert.equal(a.volume,2);assert.equal(a.desiredTime,15);
+ t.volumeMetric='kitchen';a=adjustment(t,snapshot,{},c,now);assert.equal(a.volume,1);assert.equal(a.feeVolume,1);
+});
+test('unknown waiting fulfillment blocks combined mode but does not affect kitchen-only mode',()=>{
+ const c=defaults(),t=c.targets.find(t=>t.enabled),snapshot=s();snapshot.waiting.cards[0].fulfillment='unknown';
+ assert.doesNotThrow(()=>adjustment(t,snapshot,{},c,now));t.volumeMetric='waiting';assert.throws(()=>adjustment(t,snapshot,{},c,now),/Tipo de pedido/);
+});
+test('when every waiting order is pickup/internal the sum uses kitchen alone',()=>{
+ const c=defaults(),t=c.targets.find(t=>t.enabled),snapshot=s();snapshot.waiting.cards[0].fulfillment='pickup';t.volumeMetric='waiting';
+ const a=adjustment(t,snapshot,{},c,now);assert.equal(a.productionMinutes,10);assert.equal(a.volume,1);
+});

@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.9
+# José — Tempo e taxa Saipos/iFood · v0.10.0
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -247,3 +247,16 @@ A extensão agora aceita uma nova mensagem de sucesso visível em status/alert c
 O fechamento do menu espera visibility:hidden/display:none, não apenas opacity:0, para respeitar a animação. Se o menu reaparecer após o clique Salvar, fecha apenas esse menu conhecido sem clicar Salvar outra vez. Janelas desconhecidas não são aceitas/canceladas automaticamente.
 
 Testes novos reproduzem sucesso com botão habilitado e notificação antiga incapaz de confirmar novo comando. O teste assistido confirmou o salvamento pendente; não equivale à validação contínua da extensão 0.9.9 instalada. Atualize a mesma instalação, sem removê-la. Atualização pausa a operação; preserve configurações e pendências normais.
+
+
+## Atualização 0.10.0 — excluir retirada/consumo de Aguardando e esperar 3 segundos por clique
+
+Quando a regra usa Cozinha + Aguardando entrega, a parcela Cozinha continua completa. Somente os cartões classificados como entrega entram na parcela Aguardando, tanto na contagem para patamares quanto na maior permanência na etapa. Retirada/balcão e consumo interno são excluídos somente dessa parcela. Somente Cozinha e a taxa de pico (sempre apenas Cozinha) mantêm a contagem de todos os pedidos da cozinha.
+
+O DOM real do Saipos mostrou que o ícone Delivery também aparece em Balcão; o leitor não usa esse ícone como prova. Identifica condições exatas de elementos renderizados: sale.id_sale_type == 1 para entrega e == 2 para retirada/balcão, além de rótulos explícitos de retirada e consumo interno/mesa. Não lê estado Angular, credenciais nem dados pessoais. Tipo desconhecido em Aguardando bloqueia somente o cálculo combinado, em vez de assumir entrega ou ignorar silenciosamente. A quantidade agora também exige leitura completa dos cartões de Aguardando para conseguir classificá-los. Protocolo Saipos 5.
+
+Todos os cliques automáticos no iFood passam por uma espera fixa de 3000 ms antes do clique: abrir menu, trocar loja, escolher o ID, fechar menu, Salvar e Cancelar do próprio preenchimento quando aplicável. Após esperar, o controle é localizado novamente para não clicar em um elemento antigo. A ação rola até o controle e o focaliza quando suportado. A identidade e validade do cálculo são verificadas novamente nas ações normais. O intervalo de 30 segundos não dispara ciclos concorrentes caso um ciclo demore mais; a validade da fonte não é estendida artificialmente. Protocolo iFood 11.
+
+Dashboard explica a soma e mostra quantos pedidos de Aguardando foram incluídos/excluídos. Diagnóstico registra a espera e o resumo por tipo. O atraso foi solicitado para testar a hipótese de interface ainda em atualização; não há evidência suficiente para atribuir todos os bloqueios à velocidade. A instalação e os salvamentos contínuos continuam pendentes de validação.
+
+Atualize os arquivos na mesma pasta já carregada, sem remover a extensão. A atualização pausa a operação. Revise a opção Cozinha + Aguardando, revalide eventual pendência e depois inicie. Dados normais existentes são preservados; dados anônimos são temporários. Não houve alteração de prazo/taxa no iFood durante o desenvolvimento desta versão.

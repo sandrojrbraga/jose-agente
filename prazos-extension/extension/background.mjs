@@ -1,6 +1,6 @@
 import {chooseSaipos,linkReadings} from './link-report.mjs';
 import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES,resolvePortalTab} from './context.mjs';
-import {defaults,migrate,validate,inSchedule,demand,adjustment,stepRows,plan} from './core.mjs';
+import {defaults,migrate,validate,inSchedule,demand,adjustment,stepRows,plan,eligibleWaiting} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
 const incognito=!!chrome.extension?.inIncognitoContext;
 const storage=contextStore(chrome,incognito),queryTabs=contextTabs(chrome,incognito);
@@ -19,7 +19,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===10)&&(m.type!=='SAIPOS_READ'||r.readerVersion===4))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===11)&&(m.type!=='SAIPOS_READ'||r.readerVersion===5))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -27,7 +27,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==10)||(m.type==='SAIPOS_READ'&&r.readerVersion!==4))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==11)||(m.type==='SAIPOS_READ'&&r.readerVersion!==5))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -124,7 +124,8 @@ async function tick(manual=false){
         const calc=adjustment(t,source,st,c),{next,rows:adjustmentRows,productionMinutes:desired}=calc;
         const desiredRows=plan(t,calc.desiredTime,next.feeOffsetCents/100);
         const rows=portal?.ok?stepRows(adjustmentRows,portal.rows,t.adjustStepMinutes,desiredRows):adjustmentRows;
-        const breakdown={mode:t.timeMode,scope:t.volumeMetric,volume:calc.volume,oldestMinutes:desired,preparationMinutes:next.offset,desiredPreparationMinutes:calc.desiredTime,deliveryAverage:t.averageDeliveryMinutes,step:t.adjustStepMinutes,feeEnabled:t.feeMode==='demand',feeVolume:calc.feeVolume,feeThreshold:calc.feeThreshold,feeExtra:next.feeOffsetCents/100};
+        const waitingEligible=t.volumeMetric==='waiting'?eligibleWaiting(source):null;
+        const breakdown={waitingIncluded:waitingEligible?.count,waitingExcluded:waitingEligible?.excludedCount,mode:t.timeMode,scope:t.volumeMetric,volume:calc.volume,oldestMinutes:desired,preparationMinutes:next.offset,desiredPreparationMinutes:calc.desiredTime,deliveryAverage:t.averageDeliveryMinutes,step:t.adjustStepMinutes,feeEnabled:t.feeMode==='demand',feeVolume:calc.feeVolume,feeThreshold:calc.feeThreshold,feeExtra:next.feeOffsetCents/100};
         if(c.mode==='simulate'){
           // Simulação não muda o Portal nem o estado de execução real.
           states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,breakdown,desiredRows,rows});continue;

@@ -8,6 +8,16 @@
     for(const name of ['searchNumber','searchDesc','searchPhone','searchAddress','searchNumberPartner']) {
       if(document.querySelector(`input[name="${name}"]`)?.value.trim()) throw Error('Limpe os filtros de busca do Kanban.');
     }
+    function fulfillment(card){
+      // Condições de elementos efetivamente renderizados; não acessa o estado Angular.
+      const nodes=card.querySelectorAll?[...card.querySelectorAll('[ng-if]')]:[];
+      const types=new Set(nodes.map(e=>e.getAttribute('ng-if')?.match(/^sale\.id_sale_type\s*==\s*(\d+)$/)?.[1]).filter(Boolean));
+      const lines=card.innerText.split('\n').map(x=>x.trim());
+      if(lines.some(x=>/^(consumo interno|consumo no local|mesa(?:\s+\d+)?)$/i.test(x)))return 'internal';
+      if(types.has('2')||lines.some(x=>/^(balcão|balcao|retirada|retirar na loja)$/i.test(x)))return 'pickup';
+      if(types.size===1&&types.has('1'))return 'delivery';
+      return 'unknown';
+    }
     function column(stage){
       const h=[...document.querySelectorAll('h3')].find(e=>e.innerText.trim()===stage);
       if(!h)throw Error('Coluna ausente: '+stage);
@@ -20,7 +30,7 @@
         const checkbox=e.querySelector('input[type="checkbox"]'),id=checkbox?.id||checkbox?.getAttribute('data-qa');
         if(!id||seen.has(id))throw Error('Cartão sem identificador único ou duplicado.');seen.add(id);
         const text=e.innerText;
-        return {id,created:text.match(/\d{1,2}\/\w{3},?\s*\d{2}:\d{2}/)?.[0],since:text.match(/Desde\s+\d{2}:\d{2}[^\n]*/)?.[0]};
+        return {id,fulfillment:fulfillment(e),created:text.match(/\d{1,2}\/\w{3},?\s*\d{2}:\d{2}/)?.[0],since:text.match(/Desde\s+\d{2}:\d{2}[^\n]*/)?.[0]};
       });return {count,cards,complete:true};
     }
     const {count,cards}=column('Cozinha');
@@ -32,5 +42,5 @@
       if(!Number.isInteger(value)||value<0) throw Error('Contador inválido: '+stage);
       return {stage,count:value};
     });
-    return {storeId,readerVersion:4,capturedAt,complete:true,count,cards,stages,waiting};
+    return {storeId,readerVersion:5,capturedAt,complete:true,count,cards,stages,waiting};
 }};})();

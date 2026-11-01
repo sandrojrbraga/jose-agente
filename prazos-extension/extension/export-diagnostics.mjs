@@ -3,11 +3,11 @@ export function diagnosticReport(state,tests,extensionVersion,now=Date.now()){
   const reading=source?state.status.sources?.[source.id]:null;
   const pending=Object.entries(state.states||{}).find(([key,v])=>key.endsWith(':'+target?.id)&&v.pending)?.[1].pending;
   return {...tests,ifood:state.portal||tests.ifood,exportVersion:2,extensionVersion,exportedAt:new Date(now).toISOString(),context:state.context,
-    monitor:{enabled:c.enabled,mode:c.mode,profileRole:c.profile.role,schedule:c.schedule,timezone:c.timezone,intervalSeconds:c.intervalSeconds},
+    monitor:{enabled:c.enabled,mode:c.mode,profileRole:c.profile.role,schedule:c.schedule,timezone:c.timezone,intervalSeconds:c.intervalSeconds,clickDelaySeconds:3},
     target:target?{id:target.id,name:target.name,enabled:target.enabled,sourceId:target.sourceId,tabId:target.tabId,semanticsConfirmed:target.semanticsConfirmed,timeMode:target.timeMode,volumeMetric:target.volumeMetric,averageDeliveryMinutes:target.averageDeliveryMinutes,adjustStepMinutes:target.adjustStepMinutes,maxMinutes:target.maxMinutes,feeMode:target.feeMode,maxFee:target.maxFee,bands:target.bands,volumeRules:target.volumeRules,feeRules:target.feeRules}:null,
     source:source?{id:source.id,storeId:source.storeId,tabId:source.tabId}:null,
     status:{at:state.status.at,message:state.status.message,error:state.status.error,results:state.status.results?.filter(r=>r.id===target?.id)},
-    sourceReading:reading?{capturedAt:reading.capturedAt,count:reading.count,age:reading.age,error:reading.error,stages:reading.stages}:null,
+    sourceReading:reading?{capturedAt:reading.capturedAt,count:reading.count,age:reading.age,error:reading.error,stages:reading.stages,waiting:reading.waiting?{complete:reading.waiting.complete,total:reading.waiting.count,delivery:reading.waiting.cards?.filter(c=>c.fulfillment==='delivery').length,pickup:reading.waiting.cards?.filter(c=>c.fulfillment==='pickup').length,internal:reading.waiting.cards?.filter(c=>c.fulfillment==='internal').length,unknown:reading.waiting.cards?.filter(c=>!['delivery','pickup','internal'].includes(c.fulfillment)).length}:null}:null,
     pending:!!pending,
     pendingDetails:pending?{jobId:pending.job?.id,createdAt:pending.createdAt,stage:pending.stage,lastVerifyAt:pending.lastVerifyAt,lastError:pending.lastError,before:pending.before,expected:pending.expected||pending.job?.rows,submission:pending.submission}:null,
     logs:state.logs.filter(l=>l.storeId===target?.id).slice(0,20)};
