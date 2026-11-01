@@ -89,3 +89,9 @@ test('linking a different store still pauses, simulates and clears previous calc
  setup('live');store.config.profile.targetId='3179932';store.config.targets.push({...structuredClone(store.config.targets[0]),id:'3179932',name:'Pizza Pizza - Parangaba',enabled:true});store.config.targets[0].enabled=false;store.states.x={offset:30};inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
  const r=await call({type:'LINK_ACCOUNTS',targetId:'3148479'});assert.equal(r.preserved,false);assert.equal(store.config.enabled,false);assert.equal(store.config.mode,'simulate');assert.equal(store.config.profile.targetId,'3148479');assert.deepEqual(store.states,{});
 });
+test('successful relink replaces obsolete Saipos failure with fresh successful diagnostic',async()=>{
+ setup();store.tests={saipos:{ok:false,error:'Nenhuma aba Saipos',readAt:1}};inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];await call({type:'LINK_ACCOUNTS'});assert.equal(store.tests.saipos.ok,true);assert.equal(store.tests.saipos.storeId,'65416');assert.equal(store.tests.saipos.error,undefined);
+});
+test('activation with no enabled store fails explicitly instead of accepting an inert monitor',async()=>{
+ setup();store.config.targets.forEach(t=>t.enabled=false);const r=await call({type:'SAVE',config:store.config});assert.match(r.error,/Habilite a loja/);
+});

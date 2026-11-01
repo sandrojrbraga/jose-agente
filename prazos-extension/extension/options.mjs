@@ -2,8 +2,8 @@ import {connection,comparisonRows} from './view.mjs';
 import {defaults,migrate,validate,inSchedule} from './core.mjs';
 const $=id=>document.getElementById(id), el=(tag,txt)=>{const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;return e;};
 const call=async m=>{const r=await chrome.runtime.sendMessage(m);if(!r&&['STATE','TABS','DISCOVER'].includes(m.type))throw Error('Sem resposta do José. Recarregue a extensão e abra esta página novamente.');return r;};
-let config,tabs=[];
-function message(txt,error=false){$('message').textContent=txt;$('message').className=error?'error':'ok';}
+let config,tabs=[],savedConfig=null,saving=false;
+function message(txt,error=false){$('message').textContent=txt;$('message').className=error?'error':'ok';$('saveMessage').textContent=txt;$('saveMessage').className=error?'error':'ok';}
 function field(parent,label,value,fn,type='text'){
   const l=el('label',label),i=el('input');i.type=type;
   if(type==='checkbox')i.checked=!!value;else i.value=value??'';
@@ -82,11 +82,11 @@ function loadForm(){
   $('mode').value=config.mode;$('interval').value=config.intervalSeconds;$('stale').value=config.staleSeconds;$('readings').value=config.decreaseReadings;$('step').value=config.decreaseStepMinutes;$('timezone').value=config.timezone;$('enabled').checked=config.enabled;$('start').value=config.schedule.start;$('end').value=config.schedule.end;
   $('days').replaceChildren();['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach((name,i)=>field($('days'),name,config.schedule.days.includes(i),v=>{config.schedule.days=v?[...new Set([...config.schedule.days,i])]:config.schedule.days.filter(d=>d!==i);},'checkbox'));draw();
 }
-function readForm(){
+function readForm(check=true){
   config.profile={...config.profile,label:$('profileLabel').value,role:$('profileRole').value};
   config.mode=$('mode').value;config.enabled=$('enabled').checked;config.timezone=$('timezone').value;
   for(const [key,id] of [['intervalSeconds','interval'],['staleSeconds','stale'],['decreaseReadings','readings'],['decreaseStepMinutes','step']])config[key]=Number($(id).value);
-  config.schedule.start=$('start').value;config.schedule.end=$('end').value;return validate(config);
+  config.schedule.start=$('start').value;config.schedule.end=$('end').value;return check?validate(config):config;
 }
 function showTests(tests){
   $('testResults').replaceChildren();
@@ -105,6 +105,7 @@ function showTests(tests){
   }
 }
 function renderOverview(d){
+  savedConfig=d.config;showPending();
   $('environment').textContent=d.context==='incognito'?'AMBIENTE ANÔNIMO · configuração temporária e separada':'AMBIENTE NORMAL · configuração persistente';
   const saved=d.config,target=saved.targets.find(t=>t.id===saved.profile.targetId),source=saved.sources.find(s=>s.id===target?.sourceId),now=Date.now();
   $('profileStore').textContent=target?.name||'Loja não cadastrada';
@@ -116,8 +117,8 @@ function renderOverview(d){
     $(id+'State').textContent=c.label;$(id+'State').className=c.tone;$(id+'Note').textContent=note;
   }
   const surge=result?.breakdown;$('feeSurgeState').textContent=target?.feeMode==='demand'?`Taxa de pico ATIVADA · somente Cozinha${surge?.feeEnabled?' · '+surge.feeVolume+' pedidos · acréscimo calculado R$ '+surge.feeExtra.toFixed(2):' · aguarda cálculo'}`:'Taxa de pico DESATIVADA · tempo automático independente';
-  $('monitorState').textContent=!saved.enabled?'Pausado':!inSchedule(now,saved)?'Fora do horário':saved.mode==='simulate'?'Simulação':'Execução';
-  $('monitorNote').textContent=`Configuração salva · ciclo de ${saved.intervalSeconds}s`;
+  $('monitorState').textContent=!saved.enabled?'Pausado':!inSchedule(now,saved)?'Fora do horário':d.status.error||result?.error?'Bloqueado':saved.mode==='simulate'?'Simulação':'Execução';
+  $('monitorNote').textContent=!saved.enabled&&$('enabled').checked?'Ativação marcada no formulário, ainda não salva.':`Configuração salva · ciclo de ${saved.intervalSeconds}s`;
   const edits=Object.values(d.timeEdits?.[target?.id]||{}).map(e=>({type:'saved',storeId:target.id,at:e.at,before:[{km:e.km,minutes:e.before}],after:[{km:e.km,minutes:e.after}]}));
   const last=d.logs.find(l=>l.type==='saved'&&l.storeId===target?.id)||edits.sort((a,b)=>b.at.localeCompare(a.at))[0];
   $('lastSaved').textContent=last?new Date(last.at).toLocaleTimeString('pt-BR'):'Nenhuma registrada';
@@ -131,10 +132,10 @@ function renderOverview(d){
   const bd=result?.breakdown;$('calculation').textContent=bd?`${bd.mode==='volume'?'Quantidade '+bd.volume+' → patamar de '+bd.desiredPreparationMinutes+' min':'Maior tempo na etapa: '+bd.oldestMinutes+' min'} · fila: ${bd.scope==='waiting'?'Cozinha + Aguardando':'Cozinha'} + entrega média ${bd.deliveryAverage} min + adicional por distância. Preparo após redução gradual: ${bd.preparationMinutes} min. Passo máximo: ${bd.step} min por ciclo.`:'Execute uma consulta para ver cada parcela da conta.';
   $('comparisonNote').textContent=result?.error?result.error:!current?'Leia o iFood para ver os valores atuais da loja.':!planned?'Clique Consultar e calcular agora para comparar com os parâmetros salvos.':saved.mode==='simulate'?'Simulação: comparação somente de leitura.':'Comparação das últimas leituras. Confira o registro da última alteração acima.';
 }
-let liveRefresh=false;
-async function updatePortal(){
-  if(liveRefresh||document.hidden)return;liveRefresh=true;
-  try{await call({type:'READ_IFOOD'});await refresh();}catch(e){message(e.message,true);}finally{liveRefresh=false;}
+let liveRefresh=false,portalTask=null;
+function updatePortal(){
+  if(liveRefresh||saving||document.hidden)return;liveRefresh=true;
+  portalTask=(async()=>{try{await call({type:'READ_IFOOD'});await refresh();}catch(e){message(e.message,true);}finally{liveRefresh=false;}})();return portalTask;
 }
 async function refresh(){
   const d=await call({type:'STATE'});renderOverview(d);$('status').replaceChildren();
@@ -147,7 +148,33 @@ async function refresh(){
   if(d.status.discovery)$('discovery').textContent=JSON.stringify(d.status.discovery.map(({tabId,storeId,count,complete,error})=>({tabId,storeId,count,complete,error})),null,2);
 }
 async function action(fn){try{await fn();}catch(e){message(e.message,true);}}
-$('save').onclick=()=>action(async()=>{const c=readForm();if(c.mode==='live'&&c.enabled&&!confirm('Ativar alterações reais nos IDs habilitados, dentro do horário configurado?'))return;const r=await call({type:'SAVE',config:c});if(r.error)throw Error(r.error);message(c.enabled?'Configuração salva. Agendamento habilitado no Chrome.':'Configuração salva. Monitoramento pausado.');await refresh();});
+function signature(c){return JSON.stringify({...c,sources:c.sources.map(s=>({...s,tabId:null})),targets:c.targets.map(t=>({...t,tabId:null}))});}
+function showPending(){
+  if(!config||!savedConfig)return;
+  const dirty=signature(readForm(false))!==signature(savedConfig);
+  $('pendingNotice').hidden=!dirty;
+  $('pendingNotice').textContent=dirty?'Há opções não salvas. O cartão Monitoramento mostra o estado SALVO; marcar Execução ou Monitorar no formulário ainda não ativa a operação. Clique Salvar e aplicar ou Iniciar monitoramento.':'';
+}
+async function saveAndApply(start=false){
+  if(saving)return;saving=true;$('save').disabled=true;$('startMonitor').disabled=true;
+  try{
+    if(portalTask)await portalTask;
+    if(start){$('enabled').checked=true;const target=config.targets.find(t=>t.id===config.profile.targetId);if(!target)throw Error('Escolha a loja em Cadastro.');target.enabled=true;draw();}
+    const c=readForm();
+    if(c.enabled&&!c.targets.some(t=>t.enabled))throw Error('Habilite a loja em Parâmetros ou use Iniciar monitoramento.');
+    if(c.mode==='live'&&c.enabled&&!confirm(`Iniciar alterações reais de tempo e taxa na loja ${c.targets.find(t=>t.id===c.profile.targetId)?.name}, dentro do horário configurado?`)){message('Ativação cancelada. O monitor continua no estado salvo.',true);await refresh();return;}
+    message('Salvando e conferindo a ativação...');
+    const r=await call({type:'SAVE',config:c});if(r?.error)throw Error(r.error);if(!r?.ok)throw Error('O José não confirmou o salvamento. Tente novamente.');
+    const verified=await call({type:'STATE'});
+    if(verified.config.enabled!==c.enabled||verified.config.mode!==c.mode)throw Error('A ativação não foi confirmada no armazenamento. O monitor não foi iniciado.');
+    savedConfig=verified.config;showPending();await refresh();
+    if(c.enabled){const cycle=await call({type:'TICK'});await refresh();const blocked=cycle?.error||cycle?.results?.find(x=>x.error)?.error;if(blocked)throw Error('Monitoramento salvo como ativo, mas os ajustes estão bloqueados: '+blocked);message(inSchedule(Date.now(),c)?`Monitoramento habilitado em ${c.mode==='live'?'EXECUÇÃO':'SIMULAÇÃO'}. Confira o resultado do primeiro ciclo.`:'Monitoramento habilitado. Aguarda o horário programado.');}
+    else message('Configuração salva e conferida. Monitoramento pausado.');
+  }catch(e){const hint=/significado do campo Tempo/.test(e.message)?' Em Parâmetros, confirme o significado do campo Tempo antes de ativar Execução.':'';message('Não foi possível concluir: '+e.message+hint,true);showPending();}
+  finally{saving=false;$('save').disabled=false;$('startMonitor').disabled=false;}
+}
+$('save').onclick=()=>saveAndApply(false);
+$('startMonitor').onclick=()=>saveAndApply(true);
 $('pause').onclick=()=>action(async()=>{const r=await call({type:'PAUSE'});$('enabled').checked=false;message(r.message);});
 $('tick').onclick=()=>action(async()=>{message('Consultando a configuração SALVA…');const r=await call({type:'TICK'});if(r.error)throw Error(r.error);await refresh();});
 $('verify').onclick=()=>action(async()=>{const r=await call({type:'REVERIFY'});if(r.error)throw Error(r.error);message(`${r.count} envio(s) revalidado(s), sem reenvio.`);await refresh();});
@@ -194,3 +221,5 @@ $('openBoth').onclick=()=>action(async()=>{
   $('openBoth').disabled=true;
   try{const r=await call({type:'OPEN_BOTH'});if(r.error)throw Error(r.error);tabs=await call({type:'TABS'});draw();message(`${r.created} página(s) aberta(s), ${r.reused} já aberta(s). Faça login nas duas plataformas e depois clique Vincular Saipos + iFood.`);}finally{$('openBoth').disabled=false;}
 });
+
+document.addEventListener?.('change',()=>showPending());

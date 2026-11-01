@@ -178,7 +178,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         if(changedStore){c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);}
         else{const latest=await get();c.enabled=latest.config.enabled;c.mode=latest.config.mode;} // Pausar durante a leitura continua tendo prioridade.
         const portal={...inspected,targetId:t.id,tabId:t.tabId,latencyMs:Date.now()-start};
-        await storage.set({config:validate(c),states:changedStore?{}:d.states,portal,status:{...d.status,at:Date.now(),message:changedStore?'Nova loja vinculada. Monitoramento pausado para revisão.':'Mesma loja reconectada. Modo e monitoramento salvos foram mantidos.',sources:{[source.id]:{...kitchen,age:demand(kitchen,c)}},results:changedStore?[]:d.status.results||[]}});
+        const tests=(await storage.get(['tests'])).tests||{};tests.saipos={...auditSaipos(kitchen,source,c),sourceId:source.id,tabId:source.tabId,latencyMs:Date.now()-start};tests.ifood=portal;
+        await storage.set({tests,config:validate(c),states:changedStore?{}:d.states,portal,status:{...d.status,at:Date.now(),message:changedStore?'Nova loja vinculada. Monitoramento pausado para revisão.':'Mesma loja reconectada. Modo e monitoramento salvos foram mantidos.',sources:{[source.id]:{...kitchen,age:demand(kitchen,c)}},results:changedStore?[]:d.status.results||[]}});
         return {ok:true,config:c,preserved:!changedStore};
       }finally{running=false;}
     }
@@ -243,6 +244,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     if(m.type==='SAVE'){
       if(running)throw Error('Aguarde o ciclo atual antes de salvar.');
       const config=validate(m.config),d=await get();
+      if(config.enabled&&!config.targets.some(t=>t.enabled))throw Error('Habilite a loja antes de ativar o monitoramento.');
       if(Object.values(d.states).some(s=>s.pending))throw Error('Revalide os resultados pendentes antes de mudar a configuração.');
       await storage.set({config,states:{},portal:null,status:{message:'Configuração salva. Aguarda novo ciclo.'}});await ensureAlarm();return {ok:true};
     }

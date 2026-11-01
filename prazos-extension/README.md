@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.3
+# José — Tempo e taxa Saipos/iFood · v0.9.4
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -79,7 +79,7 @@ O painel tem três áreas:
 
 1. **Operação:** cartões Monitoramento, Saipos, iFood e Última alteração confirmada; tabela com tempo/taxa lidos no iFood, meta calculada, próximo ajuste, tempo anterior à última edição, tempo salvo e horário. O painel detalha a origem de cada parcela da conta. Falta de leitura e cálculo são exibidos como ausentes, sem inventar valores. Leituras vencidas perdem o estado Conectado. Valores iguais não significam que houve escrita.
 2. **Cadastro:** único local para loja/ID, perfil, cozinha Saipos e abas vinculadas. Os testes usam os mesmos vínculos salvos, sem seletores duplicados.
-3. **Parâmetros:** faixas de km, bases de tempo/taxa, patamares, limites, horário e redução. O botão Salvar cadastro e parâmetros grava todas as áreas; a atualização automática não redesenha nem sobrescreve os campos em edição.
+3. **Parâmetros:** faixas de km, bases de tempo/taxa, patamares, limites, horário e redução. O botão Salvar e aplicar opções marcadas grava todas as áreas; a atualização automática não redesenha nem sobrescreve os campos em edição.
 
 Com o painel visível, a extensão lê a aba iFood a cada 5 segundos, somente leitura. O botão **Ler iFood agora** faz a mesma conferência imediatamente. Essa frequência é de leitura, não de alteração: o ciclo de ajuste continua com mínimo de 30 segundos. Com o painel fechado, a leitura iFood ocorre nos ciclos de monitoramento habilitados. As frequências são nominais e dependem do navegador/computador ativos.
 
@@ -127,13 +127,13 @@ npm test
 npm run check
 ```
 
-109 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+116 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
 Com as duas sessões já logadas no mesmo perfil, escolher a loja e clicar **Vincular Saipos + iFood**, no topo. O botão identifica a cozinha pelo ID, confere a loja iFood pelo nome e associa as duas abas, de forma atômica, preservando o modo e o monitoramento quando a loja é a mesma; troca de loja fica pausada/em simulação. Não inicia login, não cria conta, não troca a unidade iFood e não altera prazos ou taxas. O diagnóstico informa ID iFood esperado, não um ID diretamente lido do cabeçalho.
 
-Deixar apenas uma aba da cozinha Saipos e uma aba iFood na tela de entrega. Duplicidade, ausência, loja diferente e envio pendente impedem a vinculação; não deixa apenas metade do vínculo salva. Cozinha nova precisa ser cadastrada e salva antes. Os valores do formulário em edição são mantidos e só entram na operação após Salvar cadastro e parâmetros.
+Deixar apenas uma aba da cozinha Saipos e uma aba iFood na tela de entrega. Duplicidade, ausência, loja diferente e envio pendente impedem a vinculação; não deixa apenas metade do vínculo salva. Cozinha nova precisa ser cadastrada e salva antes. Os valores do formulário em edição são mantidos e só entram na operação após Salvar e aplicar opções marcadas.
 
 ## Modo anônimo e botão único de login · 0.9
 
@@ -178,3 +178,16 @@ O botão Vincular desativava enabled e trocava mode para simulate tanto no execu
 Se a loja escolhida for diferente da loja anteriormente salva, a operação continua sendo pausada em simulação, exigindo revisão. Vinculação com erro não altera a ativação. O comando Pausar durante a leitura tem prioridade; a vinculação relê a ativação salva antes de gravar. Pendências de envio continuam bloqueando a troca de vínculos. Vincular apenas lê as páginas; as alterações reais seguem ocorrendo nos ciclos autorizados.
 
 Após instalar esta atualização, o evento de atualização ainda pausa a operação para conferência. Ativar e salvar uma vez no painel atualizado; reconectar a mesma loja depois disso não desmarca a opção. Testes automatizados cobrem executor e preservação dos campos na interface; a instalação real precisa ser conferida.
+
+## Correção 0.9.4 — ativação explícita e verificação de salvamento
+
+As capturas do usuário mostraram o formulário em Execução/Monitorar marcado, mas o estado salvo ainda Pausado; o teste Saipos de uma tentativa anterior permanecia exibido como bloqueado mesmo após uma nova leitura bem-sucedida. Não foi possível determinar somente pelas capturas se o salvamento foi cancelado, rejeitado por uma validação ou ainda não aplicado.
+
+- **Iniciar monitoramento** no topo habilita a loja escolhida e o monitor, valida os parâmetros, solicita confirmação de escrita real no modo Execução, salva, relê o estado e pede o primeiro ciclo dentro das regras de horário. O modo escolhido é mantido; o botão não troca Simulação por Execução.
+- **Salvar e aplicar opções marcadas** também verifica o estado efetivamente salvo, distinguindo formulário de operação. Nenhuma ativação é anunciada sem confirmação de armazenamento.
+- Validação pendente, confirmação cancelada e erro de salvamento aparecem tanto no topo quanto junto ao botão inferior. A confirmação do significado do campo Tempo continua necessária para escrita.
+- Aviso de opções não salvas explica por que o checkbox marcado ainda não representa monitor ativo. A leitura automática não sobrescreve os campos em edição; aguarda o término da leitura em andamento antes de salvar.
+- Nova vinculação bem-sucedida substitui o erro antigo dos testes por um diagnóstico atual. Primeiro ciclo com erro é informado como ajuste bloqueado; conexão por si só não é tratada como salvamento de prazo.
+- Ativação sem nenhuma loja habilitada é rejeitada. O botão Iniciar habilita a loja selecionada; salvamento comum não habilita destinos ocultamente.
+
+Testes cobrem os fluxos da interface e do executor com APIs simuladas. A instalação atualizada ainda precisa ser conferida no computador da loja. Não houve alteração real de tempo ou taxa durante o desenvolvimento.

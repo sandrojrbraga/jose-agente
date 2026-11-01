@@ -9,3 +9,5 @@ nav{position:sticky;top:0;background:#f3f6f5;padding:12px 0;z-index:1}nav a{padd
 .surge{border:2px solid #d6a447;background:#fffaf0;border-radius:12px;padding:18px;margin:24px 0}.surge h3{margin-top:0}.surge input[role=switch]{width:20px;height:20px;vertical-align:middle}
 
 .environment{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.03em;background:#e4edf7;color:#244b75;padding:6px 10px;border-radius:6px}
+
+#saveMessage:empty{display:none}#saveMessage{margin:12px 0 0;line-height:1.5;font-weight:600}#pendingNotice{border-color:#c78e15}
