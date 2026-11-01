@@ -12,7 +12,7 @@ globalThis.chrome={
   tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async()=>{},sendMessage:async(id,m)=>{
     messages.push(m);if(disconnected)throw Error('Receiving end does not exist.');
     if(m.type==='JOSE_EXECUTE'&&executionPortClosed)throw Error('The message port closed before a response was received.');
-    if(m.type==='SAIPOS_READ')return {readerVersion:3,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
+    if(m.type==='SAIPOS_READ')return {readerVersion:4,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:true};
     if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:7,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};

@@ -19,3 +19,12 @@ test('waiting column exports only clocks and IDs when complete; partial waiting 
  const doc=fixture(),headings=doc.querySelectorAll();headings[1].parentElement={querySelector:()=>({innerText:'1'}),querySelectorAll:()=>[{innerText:'Cliente teste\n31/out, 20:20 (50m)\nDesde 20:50 (20m)\nTelefone privado',querySelector:()=>({id:'waiting-1'})}]};
  doc.querySelectorAll=()=>headings;const snapshot=read(doc);assert.equal(snapshot.waiting.complete,true);assert.equal(snapshot.waiting.cards[0].id,'waiting-1');assert.equal(snapshot.waiting.cards[0].since,'Desde 20:50 (20m)');assert.equal(JSON.stringify(snapshot).includes('Telefone'),false);assert.equal(read(fixture()).waiting.complete,false);
 });
+test('regression: anonymous Saipos has tooltip on header span itself, not on a child',()=>{
+ const doc=fixture({missingId:true}),original=doc.querySelector;
+ doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:name=>name==='uib-tooltip'?'Pizza Pizza 08 [65416]':null}:original(q);
+ const snapshot=read(doc);assert.equal(snapshot.storeId,'65416');assert.equal(snapshot.readerVersion,4);assert.equal(snapshot.count,1);
+});
+test('header with a different kitchen ID never falls back to expected P8 ID',()=>{
+ const doc=fixture(),original=doc.querySelector;doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:()=> 'Outra cozinha [99999]'}:original(q);
+ assert.equal(read(doc).storeId,'99999');
+});

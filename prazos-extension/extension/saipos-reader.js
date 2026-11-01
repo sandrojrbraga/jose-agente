@@ -1,7 +1,8 @@
 // Leitor somente de DOM, sem cookies, estado Angular ou API interna.
 (() => { window.JoseSaiposReader={read:(document,location,capturedAt=Date.now())=>{
     if(!location.hash.includes('/kanban')) throw Error('Abra o Kanban Saipos.');
-    const tip=document.querySelector('[name="current-store-name-header-button"] [uib-tooltip]')?.getAttribute('uib-tooltip');
+    const header=document.querySelector('[name="current-store-name-header-button"]');
+    const tip=header?.getAttribute('uib-tooltip')||document.querySelector('[name="current-store-name-header-button"] [uib-tooltip]')?.getAttribute('uib-tooltip');
     const storeId=tip?.match(/\[(\d+)\]/)?.[1];
     if(!storeId) throw Error('Não foi possível identificar o ID Saipos.');
     for(const name of ['searchNumber','searchDesc','searchPhone','searchAddress','searchNumberPartner']) {
@@ -31,5 +32,5 @@
       if(!Number.isInteger(value)||value<0) throw Error('Contador inválido: '+stage);
       return {stage,count:value};
     });
-    return {storeId,readerVersion:3,capturedAt,complete:true,count,cards,stages,waiting};
+    return {storeId,readerVersion:4,capturedAt,complete:true,count,cards,stages,waiting};
 }};})();

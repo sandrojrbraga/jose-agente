@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.1
+# José — Tempo e taxa Saipos/iFood · v0.9.2
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -127,7 +127,7 @@ npm test
 npm run check
 ```
 
-104 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+106 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
@@ -162,3 +162,11 @@ A vinculação agora usa os seletores de abas do formulário sem exigir salvar t
 A reconexão do listener Saipos remove e registra novamente seu receptor, mesmo quando o número da versão é o mesmo. Isso evita que uma referência antiga impeça nova instalação do leitor. A leitura continua sem efeitos em pedidos e sem alteração de prazos/taxas.
 
 No computador do usuário, foi possível conferir uma aba HTTPS Saipos com P8 65416, estrutura Kanban esperada e sem filtros; isso não comprova que seja a mesma aba acessível ao processo anônimo do José. A instalação atualizada em modo anônimo ainda precisa ser conferida pelo botão Vincular e pelos contadores lidos. Não houve acesso ao dashboard instalado por caminhos alternativos e não foram alterados dados de produção.
+
+## Correção 0.9.2 — ID no próprio elemento do cabeçalho
+
+Na aba 1668804538 relatada pelo usuário foi observado diretamente um span com name=current-store-name-header-button e uib-tooltip="Pizza Pizza 08 [65416]" no próprio elemento. O leitor anterior buscava esse atributo apenas em um descendente. Em outra apresentação do Saipos, o elemento externo é um link e o atributo de fato fica em um filho; por isso a conferência anterior de outra aba não reproduziu o erro.
+
+O leitor agora aceita ambos os formatos observados, sem inferir ID por nome ou por pedidos do Kanban. O protocolo Saipos passa de 3 para 4, para que o executor reconecte automaticamente o leitor antigo e não continue usando o código com a busca incorreta. Foram adicionadas regressões para o span direto e para um ID divergente, que continua divergente e é bloqueado pela vinculação.
+
+Na conferência somente de leitura da aba relatada, a expressão corrigida retornou ID 65416, Cozinha 0, Aguardando entrega 0 e Saiu para entrega 2. Isso confirma o formato e a identificação no DOM real; o botão da extensão atualizada ainda deve ser testado após instalação. Nenhum pedido, prazo ou taxa foi alterado.
