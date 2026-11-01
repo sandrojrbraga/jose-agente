@@ -1,7 +1,9 @@
 (() => {
+  if(window.joseIfoodVersion===2)return;window.joseIfoodVersion=2;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
+  const normalized=s=>s.trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
   const button=label=>[...document.querySelectorAll('button')].find(e=>visible(e)&&text(e)===label);
   const header=()=>[...document.querySelectorAll('button')].find(e=>visible(e)&&/^Pizza Pizza/.test(text(e))&&text(e).includes(''));
   async function until(fn,label,ms=12000) {
@@ -27,7 +29,7 @@
     });
   }
   function checkHeader(target){
-    if(!header()||text(header()).replace(/\s*$/,'').trim()!==target.name)throw Error('A loja selecionada mudou. Operação interrompida.');
+    if(!header()||normalized(text(header()).replace(/\s*$/,''))!==normalized(target.name))throw Error('A loja selecionada mudou. Operação interrompida.');
   }
   async function selectTarget(t){
     if(!/^\d+$/.test(t.id)||!t.name)throw Error('Destino inválido.');
@@ -38,9 +40,9 @@
     const search=await until(()=>document.querySelector('input[placeholder="Busque pelo nome ou ID"]'),'Busca de lojas indisponível.');
     setInput(search,t.id);
     const option=await until(()=>[...document.querySelectorAll('[role="option"]')].find(e=>visible(e)&&new RegExp('ID\\s*'+t.id+'(?!\\d)').test(text(e))),'ID iFood não encontrado.');
-    if(!text(option).includes(t.name))throw Error('Nome e ID iFood não correspondem.');
+    if(!normalized(text(option)).includes(normalized(t.name)))throw Error('Nome e ID iFood não correspondem.');
     option.click();
-    await until(()=>header()&&text(header()).replace(/\s*$/,'').trim()===t.name,'A loja não terminou de carregar.');
+    await until(()=>header()&&normalized(text(header()).replace(/\s*$/,''))===normalized(t.name),'A loja não terminou de carregar.');
     // A troca de loja pode remontar o conteúdo depois do cabeçalho.
     await pause(900);
     await until(()=>{try{return readRows().length>0;}catch{return false;}},'Tabela não carregada.');

@@ -1,17 +1,37 @@
-export const VERSION = 1;
+export const VERSION = 2;
+export const STORE_CATALOG = [
+ ['3469536','Pizza Pizza Aquiraz'],
+ ['3450370','Pizza Pizza - Jardim Cearense','p8'],
+ ['3446641','Pizza Pizza Jardins Da serra'],
+ ['4164721','Pizza Pizza - João Xxiii'],
+ ['3288741','Pizza Pizza Maracanaú'],
+ ['3148479','Pizza Pizza - Maraponga','p8'],
+ ['3801484','Pizza Pizza - Oficial'],
+ ['3325340','Pizza Pizza Pajuçara'],
+ ['3179932','Pizza Pizza - Parangaba','p8'],
+ ['3521123','Pizza Pizza - Porto das Dunas'],
+ ['3521126','Pizza Pizza - Prainha']
+];
 export const defaults = () => ({
   version: VERSION, enabled: false, mode: 'simulate', timezone: 'America/Fortaleza',
   schedule: {days: [0,1,2,3,4,5,6], start: '14:00', end: '02:00'},
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
-  targets: [
-    {id:'3148479', name:'Pizza Pizza - Maraponga', sourceId:'p8'},
-    {id:'3450370', name:'Pizza Pizza - Jardim Cearense', sourceId:'p8'},
-    {id:'3179932', name:'Pizza Pizza - Parangaba', sourceId:'p8'}
-  ].map(t=>({...t, enabled:false, tabId:null, semanticsConfirmed:false,
-    maxMinutes:120, feeMode:'preserve',
-    bands:Array.from({length:14},(_,i)=>({km:(i+1)/2,minutes:15+i*5,fee:null}))}))
+  targets: STORE_CATALOG.map(([id,name,sourceId])=>({id,name,sourceId:sourceId||'',
+    enabled:!!sourceId,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',
+    bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,fee:null}))}))
 });
+export function migrate(old){
+  if(!old)return defaults();
+  if(old.version===VERSION)return old;
+  if(old.version!==1)throw Error('Versão de configuração desconhecida.');
+  const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
+  const fresh=defaults().targets;
+  c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
+  c.targets.forEach(t=>{t.id=String(t.id);t.semanticsConfirmed=false;});
+  return c;
+}
+
 const fail = m => {throw new Error(m);};
 const finite = (n,min,max,label) => {
   if(typeof n !== 'number'||!Number.isFinite(n)||n<min||n>max) fail(label);
@@ -21,7 +41,7 @@ export function validate(c) {
   if(typeof c.enabled!=='boolean') fail('Estado de execução inválido.');
   try {new Intl.DateTimeFormat('pt-BR',{timeZone:c.timezone}).format();} catch {fail('Fuso inválido.');}
   if(!Array.isArray(c.sources)||!c.sources.length||c.sources.length>5) fail('Cadastre de 1 a 5 fontes Saipos.');
-  if(!Array.isArray(c.targets)||!c.targets.length||c.targets.length>4) fail('Cadastre de 1 a 4 IDs iFood.');
+  if(!Array.isArray(c.targets)||!c.targets.length||c.targets.length>11) fail('Cadastre de 1 a 11 IDs iFood.');
   const unique=(xs,key)=>new Set(xs.map(x=>String(x[key]))).size===xs.length;
   if(!unique(c.sources,'id')||!unique(c.sources,'storeId')||!unique(c.targets,'id')) fail('IDs duplicados.');
   for(const s of c.sources) {
@@ -30,7 +50,9 @@ export function validate(c) {
   }
   if(!unique(c.sources.filter(x=>x.tabId!==null),'tabId')) fail('Não vincule uma aba a duas fontes.');
   for(const t of c.targets) {
-    if(!/^\d+$/.test(t.id)||!t.name||!c.sources.some(s=>s.id===t.sourceId)) fail('Destino sem ID, nome ou cozinha válida.');
+    if(!/^\d+$/.test(t.id)||!t.name) fail('Destino sem ID ou nome.');
+    if(t.sourceId&&!c.sources.some(s=>s.id===t.sourceId)) fail('Destino vinculado a uma cozinha inexistente.');
+    if(t.enabled&&c.mode==='live'&&!t.sourceId) fail('Vincule a cozinha Saipos de cada destino habilitado.');
     if(typeof t.enabled!=='boolean'||typeof t.semanticsConfirmed!=='boolean') fail('Validação do destino inválida.');
     if(t.tabId!==null&&!Number.isInteger(t.tabId)) fail('Aba iFood inválida.');
     if(!['preserve','configured'].includes(t.feeMode)) fail('Modo da taxa inválido.');

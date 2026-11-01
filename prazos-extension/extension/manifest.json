@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
   "name": "José — Prazos Saipos e iFood",
-  "version": "0.1.0",
-  "description": "Leitura de até 5 Kanbans Saipos e ajuste verificável de até 4 cadastros iFood.",
+  "version": "0.2.0",
+  "description": "Leitura de até 5 Kanbans Saipos e ajuste verificável de até 11 cadastros iFood.",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "alarms", "tabs"],
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
   "host_permissions": ["https://conta.saipos.com/*", "https://portal.ifood.com.br/*"],
   "background": {"service_worker": "background.mjs", "type": "module"},
   "action": {"default_title": "Abrir José", "default_popup": "popup.html"},
   "options_page": "options.html",
   "content_scripts": [
-    {"matches": ["https://conta.saipos.com/*"], "js": ["saipos.js"], "run_at": "document_idle"},
+    {"matches": ["https://conta.saipos.com/*"], "js": ["saipos-reader.js", "saipos.js"], "run_at": "document_idle"},
     {"matches": ["https://portal.ifood.com.br/*"], "js": ["ifood.js"], "run_at": "document_idle"}
   ]
 }

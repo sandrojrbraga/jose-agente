@@ -1,6 +1,6 @@
-import {defaults,validate,inSchedule,demand,nextOffset,plan} from './core.mjs';
+import {defaults,migrate,validate,inSchedule,demand,nextOffset,plan} from './core.mjs';
 let running=false;
-const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status']);return {config:d.config||defaults(),states:d.states||{},logs:d.logs||[],status:d.status||{}};};
+const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{}};};
 async function log(event){const {logs}=await get();await chrome.storage.local.set({logs:[{at:new Date().toISOString(),...event},...logs].slice(0,250)});}
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function bind(kind,id,tabId){const {config}=await get();const item=config[kind].find(x=>x.id===id);if(item)item.tabId=tabId;await chrome.storage.local.set({config});}
@@ -9,7 +9,18 @@ async function send(tabId,m){
   const tab=await chrome.tabs.get(tabId);
   const origin=m.type==='SAIPOS_READ'?'https://conta.saipos.com/':'https://portal.ifood.com.br/';
   if(!tab.url?.startsWith(origin))throw Error('Aba fechada ou endereço diferente do autorizado.');
-  return chrome.tabs.sendMessage(tabId,m);
+  try {
+    const r=await chrome.tabs.sendMessage(tabId,m);
+    if(r)return r;
+    if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
+  }catch(e){
+    if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
+  }
+  const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood.js'];
+  await chrome.scripting.executeScript({target:{tabId},files});
+  const r=await chrome.tabs.sendMessage(tabId,m);
+  if(!r)throw Error('Leitor não respondeu mesmo após reconexão. Confira acesso ao site.');
+  return r;
 }
 async function verifyReload(target,expected){
   await chrome.tabs.reload(target.tabId);
@@ -20,12 +31,21 @@ async function verifyReload(target,expected){
   }
   throw Error('Não foi possível reler o prazo depois de recarregar.');
 }
+async function discover(){
+  const tabs=await chrome.tabs.query({url:['https://conta.saipos.com/*']});
+  const rows=[];
+  for(const tab of tabs){
+    try{const snapshot=await send(tab.id,{type:'SAIPOS_READ'});rows.push({tabId:tab.id,title:tab.title,...snapshot});}
+    catch(e){rows.push({tabId:tab.id,title:tab.title,error:e.message});}
+  }
+  return rows;
+}
 async function ensureAlarm(){const {config}=await get();await chrome.alarms.create('jose-tick',{periodInMinutes:Math.max(30,config.intervalSeconds)/60});}
 async function tick(manual=false){
   if(running)return {busy:true};running=true;
   try {
     const d=await get(),c=validate(d.config),states=d.states;
-    if(!c.enabled&&(!manual||c.mode==='live')){await chrome.storage.local.set({status:{at:Date.now(),message:'Pausado'}});return;}
+    if(!c.enabled&&(!manual||c.mode==='live')){await chrome.storage.local.set({status:{...d.status,message:'Pausado — clique Consultar agora para diagnóstico em simulação'}});return;}
     if(!inSchedule(Date.now(),c)&&(!manual||c.mode==='live')){for(const s of Object.values(states))s.lowerCount=0;await chrome.storage.local.set({states,status:{at:Date.now(),message:'Fora do horário programado'}});return;}
     const sources={};
     for(const s of c.sources){
@@ -93,6 +113,26 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(s.id!==chrome.runtime.id||!s.url?.startsWith(chrome.runtime.getURL('')))return;
   (async()=>{
     if(m.type==='STATE')return get();
+    if(m.type==='DISCOVER'){
+      if(running)throw Error('Aguarde o ciclo atual.');running=true;
+      try{
+        const readings=await discover(),d=await get();
+        const valid=readings.filter(r=>r.complete&&!r.error);
+        for(const r of valid){
+          if(valid.filter(x=>x.storeId===r.storeId).length!==1)continue;
+          let source=d.config.sources.find(s=>s.storeId===r.storeId);
+          if(!source&&d.config.sources.length<5){source={id:'saipos-'+r.storeId,name:'Cozinha Saipos '+r.storeId,storeId:r.storeId,tabId:null};d.config.sources.push(source);}
+          if(source)source.tabId=r.tabId;
+        }
+        await chrome.storage.local.set({config:d.config,status:{...d.status,discovery:readings}});
+        return {ok:true,readings,config:d.config};
+      }finally{running=false;}
+    }
+    if(m.type==='OPEN_TAB'){
+      const url=m.site==='saipos'?'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer':m.site==='ifood'?'https://portal.ifood.com.br/merchant-delivery-core-portal-experience':null;
+      if(!url)throw Error('Site não autorizado.');
+      const tab=await chrome.tabs.create({url});return {ok:true,tabId:tab.id};
+    }
     if(m.type==='TABS')return chrome.tabs.query({url:['https://conta.saipos.com/*','https://portal.ifood.com.br/*']});
     if(m.type==='SAVE'){
       if(running)throw Error('Aguarde o ciclo atual antes de salvar.');
