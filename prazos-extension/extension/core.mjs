@@ -1,4 +1,4 @@
-export const VERSION = 2;
+export const VERSION = 3;
 export const STORE_CATALOG = [
  ['3469536','Pizza Pizza Aquiraz'],
  ['3450370','Pizza Pizza - Jardim Cearense','p8'],
@@ -13,7 +13,7 @@ export const STORE_CATALOG = [
  ['3521126','Pizza Pizza - Prainha']
 ];
 export const defaults = () => ({
-  version: VERSION, enabled: false, mode: 'simulate', timezone: 'America/Fortaleza',
+  version: VERSION, profile:{label:'Maraponga / P8 — teste',role:'local'}, enabled: false, mode: 'simulate', timezone: 'America/Fortaleza',
   schedule: {days: [0,1,2,3,4,5,6], start: '14:00', end: '02:00'},
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
@@ -24,7 +24,7 @@ export const defaults = () => ({
 export function migrate(old){
   if(!old)return defaults();
   if(old.version===VERSION)return old;
-  if(old.version!==1)throw Error('Versão de configuração desconhecida.');
+  if(![1,2].includes(old.version))throw Error('Versão de configuração desconhecida.');
   const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
   const fresh=defaults().targets;
   c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
@@ -39,6 +39,7 @@ const finite = (n,min,max,label) => {
 export function validate(c) {
   if(c.version!==VERSION||!['simulate','live'].includes(c.mode)) fail('Versão ou modo inválido.');
   if(typeof c.enabled!=='boolean') fail('Estado de execução inválido.');
+  if(c.profile&&!['local','reader','executor'].includes(c.profile.role))fail('Papel do perfil inválido.');
   try {new Intl.DateTimeFormat('pt-BR',{timeZone:c.timezone}).format();} catch {fail('Fuso inválido.');}
   if(!Array.isArray(c.sources)||!c.sources.length||c.sources.length>5) fail('Cadastre de 1 a 5 fontes Saipos.');
   if(!Array.isArray(c.targets)||!c.targets.length||c.targets.length>11) fail('Cadastre de 1 a 11 IDs iFood.');

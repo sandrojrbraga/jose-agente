@@ -1,5 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===2)return;window.joseIfoodVersion=2;
+  if(window.joseIfoodVersion===3)return;
+  if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
+  window.joseIfoodVersion=3;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -83,9 +85,10 @@
       return {error:e.message,uncertain:submitted,expected,before:publicRows(before)};
     }
   }
-  chrome.runtime.onMessage.addListener((m,s,reply)=>{
-    if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ'].includes(m.type))return;
+  const listener=(m,s,reply)=>{
+    if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
+      if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:header()?text(header()).replace(/\s*$/,'').trim():'',unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ')return {ok:true,rows:publicRows(await selectTarget(m.target))};
       if(m.type==='JOSE_VERIFY'){
         const rows=await selectTarget(m.target);
@@ -93,5 +96,7 @@
       }
       return execute(m);
     })().then(reply).catch(e=>reply({error:e.message}));return true;
-  });
+  };
+  window.joseIfoodListener=listener;
+  chrome.runtime.onMessage.addListener(listener);
 })();

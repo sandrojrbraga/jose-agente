@@ -1,6 +1,6 @@
 # José — Prazos Saipos e iFood
 
-Extensão Chrome Manifest V3, versão 0.2.0. Até **5 fontes/cozinhas Saipos** e **11 IDs iFood**. José é o executor integrado desta nova extensão; não depende do antigo `comando.json`, do Toqan, de IA ou de uma conversa aberta. Não contém tokens, cookies ou dados de clientes. Não instala software no computador por conta própria.
+Extensão Chrome Manifest V3, versão 0.3.0. Até **5 fontes/cozinhas Saipos** e **11 IDs iFood**. José é o executor integrado desta nova extensão; não depende do antigo `comando.json`, do Toqan, de IA ou de uma conversa aberta. Não contém tokens, cookies ou dados de clientes. Não instala software no computador por conta própria.
 
 ## Estado de validação
 
@@ -71,3 +71,22 @@ O cadastro de usuários por cozinha/loja ajuda a limitar acesso e identificar a�
 ### Atualização
 
 Substituir os arquivos da pasta instalada pela pasta extension desta versão, abrir chrome://extensions e clicar Recarregar na extensão José. Fechar as páginas de configuração antigas e abrir novamente pelo ícone. Usar Detectar abas Saipos, conferir ID 65416 e contadores, revisar as cozinhas associadas e testar em simulação. Se o ID da extensão mudar ao carregar outra pasta, a configuração anterior ficará no perfil da instalação antiga; a nova usa o catálogo pré-configurado. Não manter duas versões ativas ao mesmo tempo.
+
+
+## Versão 0.3 — diagnóstico local por perfil
+
+Esta versão adiciona dois testes independentes, com Maraponga (3148479) selecionada inicialmente. Os testes funcionam com o monitor pausado e não habilitam a execução. Não é necessário ligar o modo real para testar a conexão.
+
+1. No perfil com Saipos P8, selecionar a aba correta e clicar **1 · Testar leitura Saipos**. Resultado esperado: ID 65416, contadores Cozinha/Aguardando entrega/Saiu para entrega, tempo do pedido mais antigo, horário da leitura e latência. Se houver mais de uma cópia do Kanban, escolher explicitamente a aba; nunca somar cópias da mesma cozinha.
+2. No perfil com iFood Maraponga, abrir manualmente Configurações de entrega, selecionar essa aba e clicar **2 · Conferir tela iFood**. O teste lê a loja atualmente aberta, raios, minutos e taxas; não abre seletor de loja, não digita e não salva. Loja diferente, valores inválidos e alterações manuais ainda não salvas bloqueiam o teste.
+3. Conferir os resultados com as telas. O ID iFood é mostrado como **ID esperado configurado**, pois o cabeçalho observado fornece o nome, não o ID selecionado. A correspondência do nome e a leitura da tabela não substituem a confirmação do ID e da semântica antes de liberar escrita.
+4. Se os dois testes ocorrerem no mesmo perfil, a comparação dos prazos pode usar o último teste Saipos, desde que a leitura continue válida e o vínculo da cozinha corresponda. Se ocorrerem em perfis separados, os resultados são independentes: não presumir transferência de dados. Usar **Exportar diagnóstico** em cada perfil para conferir os resultados.
+
+Identificação deste perfil:
+- **Saipos + iFood neste perfil**: mantém o fluxo local existente.
+- **Somente leitor Saipos**: calcula em simulação e não envia alterações ao Portal.
+- **Somente iFood — testes locais; ponte pendente**: permite conferir o Portal, mas não inicia ajustes nem presume acesso a outro perfil.
+
+A arquitetura completa entre perfis exige uma ponte local autenticada que transporte apenas ID da cozinha, horários, demanda e validade; cada executor deve estar associado ao ID iFood do seu perfil. Essa ponte ainda não foi implementada. Os botões desta versão testam extensão ↔ página do mesmo perfil, não a comunicação entre perfis.
+
+Validação da versão 0.3: 39 testes automatizados passaram, incluindo bloqueio de escrita no perfil leitor, teste iFood estritamente de inspeção, identidade incorreta, dados vencidos e mensagens locais. Ainda falta o teste dos botões na instalação atualizada do usuário. O navegador automatizado não pode observar páginas chrome-extension://; não foi usado um caminho alternativo para contornar esse bloqueio. As páginas normais Saipos e iFood foram conferidas por leitura, identificando P8 65416 e Maraponga.

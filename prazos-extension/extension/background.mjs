@@ -1,4 +1,5 @@
 import {defaults,migrate,validate,inSchedule,demand,nextOffset,plan} from './core.mjs';
+import {auditSaipos,auditIfood} from './diagnostics.mjs';
 let running=false;
 const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{}};};
 async function log(event){const {logs}=await get();await chrome.storage.local.set({logs:[{at:new Date().toISOString(),...event},...logs].slice(0,250)});}
@@ -45,6 +46,8 @@ async function tick(manual=false){
   if(running)return {busy:true};running=true;
   try {
     const d=await get(),c=validate(d.config),states=d.states;
+    if(c.profile?.role==='executor'){await chrome.storage.local.set({status:{...d.status,message:'Perfil iFood: testes disponíveis; comunicação com o perfil Saipos ainda não conectada.'}});return;}
+    if(c.profile?.role==='reader')c.mode='simulate';
     if(!c.enabled&&(!manual||c.mode==='live')){await chrome.storage.local.set({status:{...d.status,message:'Pausado — clique Consultar agora para diagnóstico em simulação'}});return;}
     if(!inSchedule(Date.now(),c)&&(!manual||c.mode==='live')){for(const s of Object.values(states))s.lowerCount=0;await chrome.storage.local.set({states,status:{at:Date.now(),message:'Fora do horário programado'}});return;}
     const sources={};
@@ -113,6 +116,42 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(s.id!==chrome.runtime.id||!s.url?.startsWith(chrome.runtime.getURL('')))return;
   (async()=>{
     if(m.type==='STATE')return get();
+    if(m.type==='TEST_SAIPOS'||m.type==='TEST_IFOOD'){
+      if(running)throw Error('Aguarde o ciclo atual.');running=true;
+      try{
+        const d=await get(),start=Date.now(),tests=(await chrome.storage.local.get(['tests'])).tests||{};
+        let result;
+        try{
+          const target=d.config.targets.find(t=>t.id===String(m.targetId));
+          if(!target)throw Error('Escolha a loja para o teste.');
+          if(m.type==='TEST_SAIPOS'){
+            const source=d.config.sources.find(s=>s.id===target.sourceId);
+            if(!source)throw Error('Vincule a cozinha Saipos deste cadastro antes de testar.');
+            let snapshot,tabId=m.tabId??source.tabId;
+            if(Number.isInteger(tabId))snapshot=await send(tabId,{type:'SAIPOS_READ'});
+            else{
+              const found=(await discover()).filter(r=>r.storeId===source.storeId&&r.complete&&!r.error);
+              if(found.length!==1)throw Error(found.length?'Mais de uma aba da mesma cozinha: selecione uma aba na configuração e salve.':'Nenhuma aba desta cozinha disponível neste perfil. Abra o Kanban e use Detectar.');
+              snapshot=found[0];tabId=found[0].tabId;
+            }
+            result={...auditSaipos(snapshot,source,d.config),tabId,sourceId:source.id};
+          }else{
+            let tabId=m.tabId??target.tabId;
+            if(!Number.isInteger(tabId)){
+              const found=await chrome.tabs.query({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
+              if(found.length!==1)throw Error(found.length?'Escolha uma aba iFood na configuração e salve antes de testar.':'Abra a tela de entrega do iFood neste perfil.');
+              tabId=found[0].id;
+            }
+            const snapshot=await send(tabId,{type:'JOSE_INSPECT'});
+            result={...auditIfood(snapshot,target,tests.saipos,d.config),tabId};
+          }
+        }catch(e){result={ok:false,error:e.message,readAt:Date.now()};}
+        result.latencyMs=Date.now()-start;
+        const key=m.type==='TEST_SAIPOS'?'saipos':'ifood';tests[key]=result;
+        await chrome.storage.local.set({tests});return result;
+      }finally{running=false;}
+    }
+    if(m.type==='TEST_RESULTS')return (await chrome.storage.local.get(['tests'])).tests||{};
     if(m.type==='DISCOVER'){
       if(running)throw Error('Aguarde o ciclo atual.');running=true;
       try{

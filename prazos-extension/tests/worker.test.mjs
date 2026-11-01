@@ -15,6 +15,7 @@ globalThis.chrome={
     if(m.type==='SAIPOS_READ')return {storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:true,expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:true};
+    if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
     throw Error('Unexpected message');
   }}
 };
@@ -38,3 +39,7 @@ test('content scripts cannot invoke administrative controls',async()=>{let respo
 
 test('existing page without receiver reconnects reader without manual reload',async()=>{setup();disconnected=true;const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(injections[0].files,['saipos-reader.js','saipos.js']);assert.equal(messages.filter(m=>m.type==='SAIPOS_READ').length,2);});
 test('uncertain live result is never automatically resent while reconnecting',async()=>{setup('live');executionPortClosed=true;const r=await call({type:'TICK'});assert.ok(r.results[0].error);assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,1);assert.equal(injections.length,0);assert.ok(store.states['live:3148479'].pending);});
+test('Saipos test works while paused without enabling monitoring',async()=>{setup();store.config.enabled=false;const r=await call({type:'TEST_SAIPOS',targetId:'3148479',tabId:1});assert.equal(r.ok,true);assert.equal(r.storeId,'65416');assert.equal(store.config.enabled,false);assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ']);});
+test('iFood test is inspection-only, never sends store-selection or execution commands',async()=>{setup();const r=await call({type:'TEST_IFOOD',targetId:'3148479',tabId:2});assert.equal(r.ok,true);assert.equal(r.selectedIdVerified,false);assert.deepEqual(messages.map(m=>m.type),['JOSE_INSPECT']);});
+test('reader profile cannot execute even if old settings requested live',async()=>{setup('live');store.config.profile.role='reader';await call({type:'TICK'});assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);});
+test('executor-only profile reports missing bridge instead of using other profiles magically',async()=>{setup();store.config.profile.role='executor';await call({type:'TICK'});assert.equal(messages.length,0);assert.match(store.status.message,/não conectada/);});

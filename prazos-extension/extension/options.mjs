@@ -12,7 +12,14 @@ function select(parent,label,value,choices,fn){
   const l=el('label',label),s=el('select');for(const [val,title] of choices){const o=el('option',title);o.value=val;s.append(o);}s.value=value??'';s.addEventListener('change',()=>fn(s.value));l.append(s);parent.append(l);return s;
 }
 const tabChoices=host=>[['','Selecione a aba aberta'],...tabs.filter(t=>t.url?.startsWith(host)).map(t=>[String(t.id),`${t.id} · ${t.title}`])];
+function diagnosticChoices(){
+  const fill=(id,choices,fallback='')=>{const s=$(id),previous=s.value;s.replaceChildren();for(const [value,label] of choices){const o=el('option',label);o.value=value;s.append(o);}s.value=choices.some(x=>x[0]===previous)?previous:fallback;};
+  fill('testTarget',config.targets.map(t=>[t.id,`${t.name} · ${t.id}`]),'3148479');
+  fill('testSaiposTab',tabChoices('https://conta.saipos.com/'));
+  fill('testIfoodTab',tabChoices('https://portal.ifood.com.br/'));
+}
 function draw(){
+  diagnosticChoices();
   $('sources').replaceChildren();$('targets').replaceChildren();
   for(const s of config.sources){const card=el('div');card.className='card';const grid=el('div');grid.className='grid';
     field(grid,'Identificador da cozinha',s.id,v=>s.id=v);field(grid,'Nome',s.name,v=>s.name=v);field(grid,'ID Saipos',s.storeId,v=>s.storeId=v);
@@ -39,13 +46,31 @@ function draw(){
   $('addSource').disabled=config.sources.length>=5;$('addTarget').disabled=config.targets.length>=11;
 }
 function loadForm(){
+  $('profileLabel').value=config.profile?.label||'';$('profileRole').value=config.profile?.role||'local';
   $('mode').value=config.mode;$('interval').value=config.intervalSeconds;$('stale').value=config.staleSeconds;$('readings').value=config.decreaseReadings;$('step').value=config.decreaseStepMinutes;$('timezone').value=config.timezone;$('enabled').checked=config.enabled;$('start').value=config.schedule.start;$('end').value=config.schedule.end;
   $('days').replaceChildren();['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach((name,i)=>field($('days'),name,config.schedule.days.includes(i),v=>{config.schedule.days=v?[...new Set([...config.schedule.days,i])]:config.schedule.days.filter(d=>d!==i);},'checkbox'));draw();
 }
 function readForm(){
+  config.profile={label:$('profileLabel').value,role:$('profileRole').value};
   config.mode=$('mode').value;config.enabled=$('enabled').checked;config.timezone=$('timezone').value;
   for(const [key,id] of [['intervalSeconds','interval'],['staleSeconds','stale'],['decreaseReadings','readings'],['decreaseStepMinutes','step']])config[key]=Number($(id).value);
   config.schedule.start=$('start').value;config.schedule.end=$('end').value;return validate(config);
+}
+function showTests(tests){
+  $('testResults').replaceChildren();
+  for(const [key,r] of Object.entries(tests)){
+    const box=el('div');box.className='card';box.append(el('strong',`${key==='saipos'?'Saipos':'iFood'} · ${r.ok?'LEITURA OK':'BLOQUEADO'}`));
+    box.append(el('p',`${new Date(r.readAt).toLocaleString('pt-BR')} · ${r.latencyMs} ms · aba ${r.tabId??'não identificada'}`));
+    if(!r.ok)box.append(el('p',r.error));
+    else if(key==='saipos'){
+      box.append(el('p',`Saipos ${r.storeId} · pedido mais antigo em produção: ${r.productionMinutes} min`));
+      box.append(el('pre',(r.stages||[]).map(s=>`${s.stage}: ${s.count}`).join('\n')));
+    }else{
+      box.append(el('p',`${r.name} · ID esperado ${r.configuredStoreId}`));box.append(el('p',r.identityNote));
+      box.append(el('pre',r.rows.map(b=>`${b.km} km: tela ${b.minutes} min · R$ ${b.fee.toFixed(2)}${b.proposedMinutes!==null?' · cálculo '+b.proposedMinutes+' min':''}`).join('\n')));box.append(el('p',r.note));
+    }
+    $('testResults').append(box);
+  }
 }
 async function refresh(){
   const d=await call({type:'STATE'});$('status').replaceChildren();
@@ -53,6 +78,7 @@ async function refresh(){
   for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':'CONFIRMADO'} · produção: ${r.productionMinutes} min`));
     if(r.rows)c.append(el('pre',r.rows.map(b=>`${b.km} km → ${b.minutes} min${b.fee!==null?' · R$ '+b.fee.toFixed(2):''}`).join('\n')));$('status').append(c);}
   $('logs').textContent=JSON.stringify(d.logs,null,2);
+  showTests(await call({type:'TEST_RESULTS'}));
   $('sourceStatus').textContent=JSON.stringify(d.status.sources||{},null,2);
   if(d.status.discovery)$('discovery').textContent=JSON.stringify(d.status.discovery.map(({tabId,storeId,count,complete,error})=>({tabId,storeId,count,complete,error})),null,2);
 }
@@ -66,6 +92,11 @@ $('addSource').onclick=()=>{config.sources.push({id:'cozinha-'+(config.sources.l
 $('addTarget').onclick=()=>{config.targets.push({id:'',name:'',sourceId:config.sources[0]?.id,enabled:false,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',bands:[{km:0.5,minutes:15,fee:null}]});draw();};
 $('export').onclick=()=>action(async()=>{const c=readForm();const blob=new Blob([JSON.stringify(c,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=el('a');a.href=u;a.download='jose-configuracao.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('import').onchange=()=>action(async()=>{const f=$('import').files[0];if(!f)return;if(f.size>200000)throw Error('Arquivo grande demais.');config=validate(migrate(JSON.parse(await f.text())));config.enabled=false;config.mode='simulate';config.targets.forEach(t=>t.tabId=null);config.sources.forEach(s=>s.tabId=null);loadForm();message('Configuração carregada em simulação e pausada. Vincule as abas e salve.');});
+for(const [id,type,tabField] of [['testSaipos','TEST_SAIPOS','testSaiposTab'],['testIfood','TEST_IFOOD','testIfoodTab']])$(id).onclick=()=>action(async()=>{
+  $(id).disabled=true;message('Conferindo a tela, sem alterar dados...');
+  try{const r=await call({type,targetId:$('testTarget').value,tabId:$(tabField).value?Number($(tabField).value):null});if(r.error&&!('ok' in r))throw Error(r.error);showTests(await call({type:'TEST_RESULTS'}));message(r.ok?'Leitura concluída. Confira o resultado abaixo.':r.error,!r.ok);}finally{$(id).disabled=false;}
+});
+$('exportTests').onclick=()=>action(async()=>{const tests=await call({type:'TEST_RESULTS'}),u=URL.createObjectURL(new Blob([JSON.stringify(tests,null,2)],{type:'application/json'})),a=el('a');a.href=u;a.download='jose-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('discover').onclick=()=>action(async()=>{
   message('Reconectando leitores e identificando cozinhas...');
   const r=await call({type:'DISCOVER'});if(r.error)throw Error(r.error);
