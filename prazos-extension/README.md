@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.4.0
+# José — Tempo e taxa Saipos/iFood · v0.5.0
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -42,7 +42,17 @@ Aumentos são imediatos no ciclo válido. Reduções precisam de duas ou mais le
 
 ## Painel e horário
 
-A navegação organiza visão da operação, perfil e conexão, parâmetros, horário/retorno, testes e salvamento. O ciclo mostra volume, patamar, produção, acréscimo de taxa e valores por km. Os campos de taxa aceitam até duas casas decimais.
+O painel tem três áreas:
+
+1. **Operação:** cartões Monitoramento, Saipos, iFood e Última alteração confirmada; tabela com o tempo/taxa lidos no iFood e o cálculo do José. Falta de leitura e cálculo são exibidos como ausentes, sem inventar valores. Leituras vencidas perdem o estado Conectado. Valores iguais não significam que houve escrita.
+2. **Cadastro:** único local para loja/ID, perfil, cozinha Saipos e abas vinculadas. Os testes usam os mesmos vínculos salvos, sem seletores duplicados.
+3. **Parâmetros:** faixas de km, bases de tempo/taxa, patamares, limites, horário e redução. O botão Salvar cadastro e parâmetros grava todas as áreas; a atualização automática não redesenha nem sobrescreve os campos em edição.
+
+Com o painel visível, a extensão lê a aba iFood a cada 5 segundos, somente leitura. O botão **Ler iFood agora** faz a mesma conferência imediatamente. Essa frequência é de leitura, não de alteração: o ciclo de ajuste continua com mínimo de 30 segundos. Com o painel fechado, a leitura iFood ocorre nos ciclos de monitoramento habilitados. As frequências são nominais e dependem do navegador/computador ativos.
+
+Inspeção, importação de faixas e revalidação agora leem diretamente a tabela aberta, sem clicar no seletor nem trocar loja. A escrita real mantém a conferência do ID no seletor antes de preencher, e relê a tabela depois de recarregar. Leitura/simulação não conta como alteração: só eventos saved aparecem no cartão Última alteração confirmada. O histórico técnico e testes ficam recolhidos em Diagnóstico e histórico.
+
+Os campos de taxa aceitam até duas casas decimais.
 
 Configurar dias, início/fim e intervalo (mínimo 30 segundos). Um expediente de sexta 14h–02h inclui sábado até 01h59. O fim do horário interrompe novos ajustes e **mantém os últimos valores**, sem restauração automática no fechamento. O retorno à base ocorre durante a operação com leituras válidas e queda de demanda.
 

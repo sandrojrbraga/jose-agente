@@ -1,7 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===5)return;
+  if(window.joseIfoodVersion===6)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=5;
+  window.joseIfoodVersion=6;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -19,7 +19,7 @@
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,String(value));
     e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));e.blur();
   }
-  const amount=s=>Number(String(s).replace(',','.'));
+  const amount=s=>/^\d+(?:[.,]\d+)?$/.test(String(s).trim())?Number(String(s).trim().replace(',','.')):NaN;
   function readRows(){
     const rows=[...document.querySelectorAll('[aria-label="table-row"]')].filter(visible);
     if(!rows.length)throw Error('Tabela de entrega não encontrada.');
@@ -90,10 +90,12 @@
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {readerVersion:5,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
-      if(m.type==='JOSE_READ')return {ok:true,rows:publicRows(await selectTarget(m.target))};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:6,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_READ'){checkHeader(m.target);const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal.');return {ok:true,rows:publicRows(readRows())};}
       if(m.type==='JOSE_VERIFY'){
-        const rows=await selectTarget(m.target);
+        checkHeader(m.target);
+        const rows=readRows();
+        if(button('Salvar')&&!button('Salvar').disabled)throw Error('Há alterações não salvas no Portal.');
         return {ok:rows.length===m.expected.length&&rows.every((b,i)=>b.km===m.expected[i].km&&b.minutes===m.expected[i].minutes&&(m.expected[i].fee===null||b.fee===m.expected[i].fee)),rows:publicRows(rows)};
       }
       return execute(m);

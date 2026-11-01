@@ -55,3 +55,11 @@ test('content executor fills demand fee and preserves fees in preserve mode',asy
     assert.equal(r.error,undefined);assert.equal(r.ok,true);assert.equal(saved,1);assert.equal(time.value,'33');assert.equal(fee.value,mode==='demand'?'9,99':'6,99');assert.equal(r.expected[0].fee,mode==='demand'?9.99:6.99);
   }
 });
+test('import and revalidation read the already-open table without selecting a store',async()=>{
+  const {document,header}=setup(),window={},callbacks=[];let clicks=0;header.click=()=>clicks++;
+  const context={window,document,location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>callbacks.push(f),removeListener(){}}}},setTimeout};
+  vm.runInNewContext(helper,context);vm.runInNewContext(content,context);
+  const target={name:'Pizza Pizza - Maraponga',id:'3148479',profilePinned:true};
+  for(const type of ['JOSE_READ','JOSE_VERIFY']){const r=await new Promise(resolve=>callbacks[0]({type,target,expected:[{km:.5,minutes:25,fee:6.99}]},{id:'test'},resolve));assert.equal(r.error,undefined);assert.equal(r.ok,true);assert.equal(r.rows[0].minutes,25);}
+  assert.equal(clicks,0);
+});

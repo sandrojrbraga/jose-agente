@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "José — Prazos Saipos e iFood",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Leitura de até 5 Kanbans Saipos e ajuste verificável de até 11 cadastros iFood.",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "alarms", "tabs", "scripting"],

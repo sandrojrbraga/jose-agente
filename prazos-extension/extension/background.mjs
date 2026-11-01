@@ -1,7 +1,7 @@
 import {defaults,migrate,validate,inSchedule,demand,adjustment} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
 let running=false;
-const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{}};};
+const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status','portal']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{},portal:d.portal||null};};
 async function log(event){const {logs}=await get();await chrome.storage.local.set({logs:[{at:new Date().toISOString(),...event},...logs].slice(0,250)});}
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function bind(kind,id,tabId){const {config}=await get();const item=config[kind].find(x=>x.id===id);if(item)item.tabId=tabId;await chrome.storage.local.set({config});}
@@ -14,7 +14,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===5))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===6))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -22,7 +22,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==5))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==6))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -42,6 +42,22 @@ async function discover(){
     catch(e){rows.push({tabId:tab.id,title:tab.title,error:e.message});}
   }
   return rows;
+}
+// Leitura direta da aba vinculada: não abre seletor, não preenche e não salva.
+async function readPortal(c){
+  const start=Date.now(),target=c.targets.find(t=>t.id===c.profile.targetId);let tabId=target?.tabId;
+  try{
+    if(!target)throw Error('Cadastre a loja deste perfil.');
+    if(!Number.isInteger(tabId)){
+      const tabs=await chrome.tabs.query({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
+      if(tabs.length!==1)throw Error('Vincule uma única aba iFood em Cadastro.');
+      tabId=tabs[0].id;
+    }
+    const snapshot=await send(tabId,{type:'JOSE_INSPECT'});
+    const r=auditIfood(snapshot,target,null,c);
+    const result={...r,targetId:target.id,tabId,latencyMs:Date.now()-start};
+    await chrome.storage.local.set({portal:result});return result;
+  }catch(e){const result={ok:false,error:e.message,readAt:Date.now(),targetId:target?.id,tabId,latencyMs:Date.now()-start};await chrome.storage.local.set({portal:result});return result;}
 }
 async function ensureAlarm(){const {config}=await get();await chrome.alarms.create('jose-tick',{periodInMinutes:Math.max(30,config.intervalSeconds)/60});}
 async function tick(manual=false){
@@ -69,6 +85,7 @@ async function tick(manual=false){
       }
       catch(e){sources[s.id]={error:e.message};}
     }
+    if(c.profile?.role!=='reader')await readPortal(c);
     const results=[];
     for(const t of c.targets.filter(t=>t.enabled)){
       const key=c.mode+':'+t.id,st=states[key]||{};
@@ -96,8 +113,9 @@ async function tick(manual=false){
         states[key].pending.expected=r.expected;
         await chrome.storage.local.set({states});
         if(!r.unchanged){const check=await verifyReload(t,r.expected);if(!check.ok)throw Error(check.error||'Prazo não confirmado após recarga.');}
+        await readPortal(c);
         states[key]={...next};
-        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true});
+        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true,changed:!r.unchanged});
         await log({storeId:t.id,type:r.unchanged?'unchanged':'saved',jobId:job.id,before:r.before,after:r.expected});
       }catch(e){if(states[key]){states[key].lowerCount=0;states[key].feeLowerCount=0;}results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
       await chrome.storage.local.set({states});
@@ -118,6 +136,10 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(s.id!==chrome.runtime.id||!s.url?.startsWith(chrome.runtime.getURL('')))return;
   (async()=>{
     if(m.type==='STATE')return get();
+    if(m.type==='READ_IFOOD'){
+      if(running)return {busy:true};running=true;
+      try{return await readPortal((await get()).config);}finally{running=false;}
+    }
     if(m.type==='TEST_SAIPOS'||m.type==='TEST_IFOOD'){
       if(running)throw Error('Aguarde o ciclo atual.');running=true;
       try{
@@ -180,7 +202,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
       if(running)throw Error('Aguarde o ciclo atual antes de salvar.');
       const config=validate(m.config),d=await get();
       if(Object.values(d.states).some(s=>s.pending))throw Error('Revalide os resultados pendentes antes de mudar a configuração.');
-      await chrome.storage.local.set({config,states:{}});await ensureAlarm();return {ok:true};
+      await chrome.storage.local.set({config,states:{},portal:null,status:{message:'Configuração salva. Aguarda novo ciclo.'}});await ensureAlarm();return {ok:true};
     }
     if(m.type==='PAUSE'){const {config}=await get();config.enabled=false;await chrome.storage.local.set({config});return {ok:true,message:running?'Pausado; uma operação já enviada pode terminar.':'Pausado'};}
     if(m.type==='TICK')return tick(true);

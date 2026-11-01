@@ -1,4 +1,5 @@
-import {defaults,migrate,validate} from './core.mjs';
+import {connection,comparisonRows} from './view.mjs';
+import {defaults,migrate,validate,inSchedule} from './core.mjs';
 const $=id=>document.getElementById(id), el=(tag,txt)=>{const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;return e;};
 const call=async m=>{const r=await chrome.runtime.sendMessage(m);if(!r&&['STATE','TABS','DISCOVER'].includes(m.type))throw Error('Sem resposta do José. Recarregue a extensão e abra esta página novamente.');return r;};
 let config,tabs=[];
@@ -12,27 +13,22 @@ function select(parent,label,value,choices,fn){
   const l=el('label',label),s=el('select');for(const [val,title] of choices){const o=el('option',title);o.value=val;s.append(o);}s.value=value??'';s.addEventListener('change',()=>fn(s.value));l.append(s);parent.append(l);return s;
 }
 const tabChoices=host=>[['','Selecione a aba aberta'],...tabs.filter(t=>t.url?.startsWith(host)).map(t=>[String(t.id),`${t.id} · ${t.title}`])];
-function diagnosticChoices(){
-  const fill=(id,choices,fallback='')=>{const s=$(id),previous=s.value;s.replaceChildren();for(const [value,label] of choices){const o=el('option',label);o.value=value;s.append(o);}s.value=choices.some(x=>x[0]===previous)?previous:fallback;};
-  fill('testTarget',config.targets.map(t=>[t.id,`${t.name} · ${t.id}`]),config.profile.targetId);
-  fill('testSaiposTab',tabChoices('https://conta.saipos.com/'));
-  fill('testIfoodTab',tabChoices('https://portal.ifood.com.br/'));
-}
 function draw(){
-  diagnosticChoices();
   const picker=$('profileTarget');picker.replaceChildren();
   for(const t of config.targets){const o=el('option',`${t.name} · ${t.id}`);o.value=t.id;picker.append(o);}picker.value=config.profile.targetId;
   $('profileStore').textContent=config.targets.find(t=>t.id===config.profile.targetId)?.name||'Escolha a loja';
-  $('sources').replaceChildren();$('targets').replaceChildren();
+  $('sources').replaceChildren();$('targets').replaceChildren();$('registration').replaceChildren();
   for(const s of config.sources){const card=el('div');card.className='card';const grid=el('div');grid.className='grid';
-    field(grid,'Identificador da cozinha',s.id,v=>s.id=v);field(grid,'Nome',s.name,v=>s.name=v);field(grid,'ID Saipos',s.storeId,v=>s.storeId=v);
+    field(grid,'Nome',s.name,v=>s.name=v);field(grid,'ID Saipos',s.storeId,v=>s.storeId=v);
     select(grid,'Aba do Kanban',s.tabId,tabChoices('https://conta.saipos.com/'),v=>s.tabId=v?Number(v):null);
     card.append(grid);const remove=el('button','Remover fonte');remove.onclick=()=>{config.sources=config.sources.filter(x=>x!==s);draw();};card.append(remove);$('sources').append(card);
   }
   for(const t of config.targets.filter(t=>t.id===config.profile.targetId)){const card=el('div');card.className='card';const grid=el('div');grid.className='grid';
-    field(grid,'Nome EXATO no Portal',t.name,v=>t.name=v);field(grid,'ID iFood',t.id,v=>t.id=v);
-    select(grid,'Cozinha que alimenta esta loja',t.sourceId,[['','Escolha a cozinha — vínculo pendente'],...config.sources.map(s=>[s.id,s.name])],v=>t.sourceId=v);
-    select(grid,'Aba Configurações de entrega',t.tabId,tabChoices('https://portal.ifood.com.br/'),v=>t.tabId=v?Number(v):null);
+    const registration=el('div');registration.className='grid';
+    field(registration,'Nome no Portal iFood',t.name,v=>t.name=v);const identity=field(registration,'ID iFood',t.id,v=>{t.id=v;config.profile.targetId=v;});identity.readOnly=!!t.id;
+    select(registration,'Cozinha que alimenta esta loja',t.sourceId,[['','Escolha a cozinha — vínculo pendente'],...config.sources.map(s=>[s.id,s.name])],v=>t.sourceId=v);
+    select(registration,'Aba Configurações de entrega',t.tabId,tabChoices('https://portal.ifood.com.br/'),v=>t.tabId=v?Number(v):null);
+    $('registration').append(registration);
     field(grid,'Limite máximo de prazo (min)',t.maxMinutes,v=>t.maxMinutes=v,'number');
     select(grid,'Taxas',t.feeMode,[['preserve','Preservar taxa existente'],['configured','Taxa-base fixa por km'],['demand','Taxa-base + acréscimo por volume']],v=>t.feeMode=v);
     field(grid,'Teto da taxa por faixa (R$)',t.maxFee,v=>t.maxFee=v,'number').step='0.01';
@@ -92,10 +88,38 @@ function showTests(tests){
     $('testResults').append(box);
   }
 }
+function renderOverview(d){
+  const saved=d.config,target=saved.targets.find(t=>t.id===saved.profile.targetId),source=saved.sources.find(s=>s.id===target?.sourceId),now=Date.now();
+  $('profileStore').textContent=target?.name||'Loja não cadastrada';
+  const result=d.status.results?.find(r=>r.id===target?.id);
+  const raw=source&&d.status.sources?.[source.id];
+  const validSource=raw?{ok:!raw.error,readAt:raw.capturedAt,error:raw.error}:null;
+  const sc=connection(validSource,saved.staleSeconds,now),pc=connection(d.portal?.targetId===target?.id?d.portal:null,saved.staleSeconds,now);
+  for(const [id,c,note] of [['saipos',sc,raw&&!raw.error?`${raw.count} em Cozinha · mais antigo ${raw.age} min`:sc.note],['ifood',pc,d.portal?.ok&&d.portal.targetId===target?.id?`${d.portal.rows.length} faixas · ${d.portal.latencyMs} ms · ${pc.note}`:pc.note]]){
+    $(id+'State').textContent=c.label;$(id+'State').className=c.tone;$(id+'Note').textContent=note;
+  }
+  $('monitorState').textContent=!saved.enabled?'Pausado':!inSchedule(now,saved)?'Fora do horário':saved.mode==='simulate'?'Simulação':'Execução';
+  $('monitorNote').textContent=`Configuração salva · ciclo de ${saved.intervalSeconds}s`;
+  const last=d.logs.find(l=>l.type==='saved'&&l.storeId===target?.id);
+  $('lastSaved').textContent=last?new Date(last.at).toLocaleTimeString('pt-BR'):'Nenhuma registrada';
+  $('lastSavedNote').textContent=last?'Salva e relida no Portal':'Simulação e leitura não contam como alteração.';
+  $('comparison').replaceChildren();
+  const planned=result&&!result.error&&now-d.status.at<=saved.staleSeconds*1000?result.rows:null;
+  const current=pc.tone==='ok'?d.portal.rows:null;
+  for(const row of comparisonRows(current,planned)){
+    const tr=el('tr');for(const value of [row.km+' km',row.current,row.proposed,row.label])tr.append(el('td',value));$('comparison').append(tr);
+  }
+  $('comparisonNote').textContent=result?.error?result.error:!current?'Leia o iFood para ver os valores atuais da loja.':!planned?'Clique Consultar e calcular agora para comparar com os parâmetros salvos.':saved.mode==='simulate'?'Simulação: comparação somente de leitura.':'Comparação das últimas leituras. Confira o registro da última alteração acima.';
+}
+let liveRefresh=false;
+async function updatePortal(){
+  if(liveRefresh||document.hidden)return;liveRefresh=true;
+  try{await call({type:'READ_IFOOD'});await refresh();}catch(e){message(e.message,true);}finally{liveRefresh=false;}
+}
 async function refresh(){
-  const d=await call({type:'STATE'});$('status').replaceChildren();
+  const d=await call({type:'STATE'});renderOverview(d);$('status').replaceChildren();
   const p=el('p',d.status.at?`${new Date(d.status.at).toLocaleString('pt-BR')} · ${d.status.message}`:'Nenhum ciclo executado.');$('status').append(p);
-  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':'CONFIRMADO'} · produção: ${r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`));
+  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':r.changed?'ALTERAÇÃO CONFIRMADA':'JÁ ESTAVA CORRETO'} · produção: ${r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`));
     if(r.rows)c.append(el('pre',r.rows.map(b=>`${b.km} km → ${b.minutes} min${b.fee!==null?' · R$ '+b.fee.toFixed(2):''}`).join('\n')));$('status').append(c);}
   $('logs').textContent=JSON.stringify(d.logs,null,2);
   showTests(await call({type:'TEST_RESULTS'}));
@@ -112,11 +136,11 @@ $('addSource').onclick=()=>{config.sources.push({id:'cozinha-'+(config.sources.l
 $('addTarget').onclick=()=>{config.targets.push({id:'',name:'',sourceId:config.sources[0]?.id,enabled:false,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,bands:[{km:0.5,minutes:15,fee:null}]});draw();};
 $('export').onclick=()=>action(async()=>{const c=readForm();const blob=new Blob([JSON.stringify(c,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=el('a');a.href=u;a.download='jose-configuracao.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('import').onchange=()=>action(async()=>{const f=$('import').files[0];if(!f)return;if(f.size>200000)throw Error('Arquivo grande demais.');config=validate(migrate(JSON.parse(await f.text())));config.enabled=false;config.mode='simulate';config.targets.forEach(t=>t.tabId=null);config.sources.forEach(s=>s.tabId=null);loadForm();message('Configuração carregada em simulação e pausada. Vincule as abas e salve.');});
-for(const [id,type,tabField] of [['testSaipos','TEST_SAIPOS','testSaiposTab'],['testIfood','TEST_IFOOD','testIfoodTab']])$(id).onclick=()=>action(async()=>{
-  $(id).disabled=true;message('Conferindo a tela, sem alterar dados...');
-  try{const r=await call({type,targetId:$('testTarget').value,tabId:$(tabField).value?Number($(tabField).value):null});if(r.error&&!('ok' in r))throw Error(r.error);showTests(await call({type:'TEST_RESULTS'}));message(r.ok?'Leitura concluída. Confira o resultado abaixo.':r.error,!r.ok);}finally{$(id).disabled=false;}
+for(const [id,type] of [['testSaipos','TEST_SAIPOS'],['testIfood','TEST_IFOOD']])$(id).onclick=()=>action(async()=>{
+  $(id).disabled=true;message('Lendo os vínculos salvos, sem alterar dados...');
+  try{const r=await call({type,targetId:config.profile.targetId});if(r.error&&!('ok' in r))throw Error(r.error);showTests(await call({type:'TEST_RESULTS'}));message(r.ok?'Leitura concluída.':r.error,!r.ok);await refresh();}finally{$(id).disabled=false;}
 });
-$('exportTests').onclick=()=>action(async()=>{const tests=await call({type:'TEST_RESULTS'}),u=URL.createObjectURL(new Blob([JSON.stringify(tests,null,2)],{type:'application/json'})),a=el('a');a.href=u;a.download='jose-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
+$('exportTests').onclick=()=>action(async()=>{const d=await call({type:'STATE'}),tests={...await call({type:'TEST_RESULTS'})};if(d.portal)tests.ifood=d.portal;const u=URL.createObjectURL(new Blob([JSON.stringify(tests,null,2)],{type:'application/json'})),a=el('a');a.href=u;a.download='jose-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('discover').onclick=()=>action(async()=>{
   message('Reconectando leitores e identificando cozinhas...');
   const r=await call({type:'DISCOVER'});if(r.error)throw Error(r.error);
@@ -124,6 +148,14 @@ $('discover').onclick=()=>action(async()=>{
   message(r.readings.length?'Diagnóstico concluído. Confira os IDs e contadores abaixo.':'Nenhuma aba Saipos neste perfil. Abra o Kanban e tente novamente.');
 });
 for(const [id,site] of [['openSaipos','saipos'],['openIfood','ifood']])$(id).onclick=()=>action(async()=>{const r=await call({type:'OPEN_TAB',site});if(r.error)throw Error(r.error);message('Aba aberta. Faça o login no site; depois use Detectar abas Saipos.');});
-$('profileTarget').onchange=()=>{config.profile.targetId=$('profileTarget').value;config.targets.forEach(t=>t.enabled=false);$('enabled').checked=false;config.enabled=false;config.mode='simulate';$('mode').value='simulate';draw();$('testTarget').value=config.profile.targetId;message('Loja do perfil alterada no formulário. Vincule as abas, revise e salve em simulação.');};
+$('profileTarget').onchange=()=>{config.profile.targetId=$('profileTarget').value;config.targets.forEach(t=>t.enabled=false);$('enabled').checked=false;config.enabled=false;config.mode='simulate';$('mode').value='simulate';draw();message('Loja do perfil alterada no formulário. Vincule as abas, revise e salve em simulação.');};
 try{const d=await call({type:'STATE'});config=d.config||defaults();tabs=await call({type:'TABS'});loadForm();await refresh();}catch(e){message(e.message,true);}
 
+
+for(const button of document.querySelectorAll('[data-page]'))button.onclick=()=>{
+  for(const page of document.querySelectorAll('.page'))page.hidden=page.id!==button.dataset.page;
+  for(const b of document.querySelectorAll('[data-page]'))b.setAttribute('aria-pressed',String(b===button));
+};
+$('readIfood').onclick=()=>updatePortal();
+await updatePortal();
+setInterval(()=>{if(!document.hidden)updatePortal();},5000);

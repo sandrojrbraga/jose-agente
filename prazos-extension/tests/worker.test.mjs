@@ -15,7 +15,7 @@ globalThis.chrome={
     if(m.type==='SAIPOS_READ')return {storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:true,expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:true};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:5,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:6,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
     throw Error('Unexpected message');
   }}
 };
@@ -29,7 +29,7 @@ function setup(mode='simulate'){
   if(p==='23:59')c.schedule={days:[0,1,2,3,4,5,6],start:'23:58',end:'23:57'};
   store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;
 }
-test('simulation reads Saipos but never sends Portal commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ']);});
+test('simulation reads both platforms but never sends write commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ','JOSE_INSPECT']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
 test('live confirmed no-op clears pending and records confirmation',async()=>{setup('live');const r=await call({type:'TICK'});assert.equal(r.results[0].verified,true);assert.equal(store.states['live:3148479'].pending,undefined);assert.equal(store.logs[0].type,'unchanged');});
 test('unresolved job blocks resend after worker recovery',async()=>{setup('live');store.states['live:3148479']={offset:10,pending:{job:{target:store.config.targets[0],rows:[{km:.5,minutes:25,fee:null}]},offset:10,lowerCount:0}};await call({type:'TICK'});assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);const r=await call({type:'REVERIFY'});assert.equal(r.count,1);assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);assert.equal(store.states['live:3148479'].pending,undefined);});
@@ -56,4 +56,6 @@ test('source failure resets fee reduction streak while preserving previous fee',
   setup();store.config.sources[0].storeId='999';store.states['simulate:3148479']={offset:20,lowerCount:1,feeOffsetCents:300,feeLowerCount:1};await call({type:'TICK'});assert.equal(store.states['simulate:3148479'].feeOffsetCents,300);assert.equal(store.states['simulate:3148479'].feeLowerCount,0);
 });
 
-test('legacy iFood content upgrades with inspection before a fee-writing command',async()=>{setup('live');legacyIfood=true;await call({type:'TICK'});assert.deepEqual(injections[0].files,['ifood-dom.js','ifood.js']);const types=messages.map(m=>m.type);assert.deepEqual(types,['SAIPOS_READ','JOSE_INSPECT','JOSE_INSPECT','JOSE_EXECUTE']);});
+test('legacy iFood content upgrades with inspection before a fee-writing command',async()=>{setup('live');legacyIfood=true;await call({type:'TICK'});assert.deepEqual(injections[0].files,['ifood-dom.js','ifood.js']);const types=messages.map(m=>m.type);assert.deepEqual(types,['SAIPOS_READ','JOSE_INSPECT','JOSE_INSPECT','JOSE_INSPECT','JOSE_EXECUTE','JOSE_INSPECT']);});
+test('direct iFood read works paused, reports latency and never sends write commands',async()=>{setup();store.config.enabled=false;const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,true);assert.equal(r.targetId,'3148479');assert.equal(r.rows[0].fee,6.99);assert.ok(r.latencyMs>=0);assert.deepEqual(messages.map(m=>m.type),['JOSE_INSPECT']);assert.equal(store.config.enabled,false);assert.equal(store.portal.tabId,2);});
+test('wrong-store iFood read replaces previous green state with explicit failure',async()=>{setup();await call({type:'READ_IFOOD'});store.config.targets[0].name='Pizza Pizza - Parangaba';const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,false);assert.match(r.error,/Loja diferente/);assert.equal(store.portal.ok,false);assert.equal(store.portal.rows,undefined);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);});
