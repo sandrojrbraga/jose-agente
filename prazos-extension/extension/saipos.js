@@ -1,6 +1,5 @@
 (() => {
-  if(window.joseSaiposReaderVersion===3)return;
-  if(window.joseSaiposListener)chrome.runtime.onMessage.removeListener(window.joseSaiposListener);
+  if(window.joseSaiposListener){try{chrome.runtime.onMessage.removeListener(window.joseSaiposListener);}catch{}}
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||m.type!=='SAIPOS_READ')return;
     try{reply(window.JoseSaiposReader.read(document,location));}

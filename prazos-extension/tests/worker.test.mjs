@@ -68,7 +68,7 @@ test('one-click link validates both pages and binds them atomically while paused
 test('duplicate tabs and wrong store prevent partial binding',async()=>{
  setup();store.config.sources[0].tabId=null;store.config.targets[0].tabId=null;
  inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'},{id:3,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
- let r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/apenas uma aba iFood/);assert.equal(store.config.sources[0].tabId,null);
+ let r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/Escolha uma aba iFood/);assert.equal(store.config.sources[0].tabId,null);
  inventory.pop();store.config.targets[0].name='Pizza Pizza - Parangaba';r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/Loja diferente/);assert.equal(store.config.sources[0].tabId,null);assert.equal(store.config.targets[0].tabId,null);
 });
 
@@ -76,3 +76,4 @@ test('confirmed time edits survive saving settings independently of rolling logs
  setup('live');changedWrite=true;await call({type:'TICK'});assert.equal(store.timeEdits['3148479']['0.5'].before,14);assert.equal(store.timeEdits['3148479']['0.5'].after,15);assert.ok(store.timeEdits['3148479']['0.5'].at);
  store.logs=[];const saved=await call({type:'SAVE',config:store.config});assert.equal(saved.ok,true);assert.equal(store.timeEdits['3148479']['0.5'].after,15);
 });
+test('failed one-click link persists exact Saipos reason in dashboard and exported tests',async()=>{setup();inventory=[];const r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/Nenhuma aba Saipos/);assert.equal(store.tests.saipos.ok,false);assert.match(store.status.sources.p8.error,/ambiente NORMAL/);assert.equal(store.config.sources[0].tabId,1);});

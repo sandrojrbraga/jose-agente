@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.0
+# José — Tempo e taxa Saipos/iFood · v0.9.1
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -127,7 +127,7 @@ npm test
 npm run check
 ```
 
-98 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+104 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
@@ -152,3 +152,13 @@ Na primeira tela, **Abrir Saipos + iFood · Login**, ao lado de Vincular, abre a
 - O armazenamento em memória não é purgado só porque a última janela anônima fechou; pode permanecer enquanto a extensão estiver carregada nessa sessão do navegador. Ao reabrir, verificar vínculos e manter pausado até conferir os logins.
 
 O suporte anônimo não cria uma sessão por janela: janelas anônimas do mesmo perfil continuam compartilhando os logins dos sites. Isso não substitui o isolamento por perfis quando são necessárias várias lojas independentes. Instalação real e login anônimo ainda precisam ser homologados; os testes utilizam APIs/DOM simulados, sem alterar prazos ou taxas reais.
+
+## Correção 0.9.1 — vinculação Saipos
+
+O aviso anterior tratava ausência, duplicidade, falha do leitor e cozinha diferente como se todos fossem abas duplicadas. A escolha explícita da aba em Cadastro também era ignorada na vinculação conjunta.
+
+A vinculação agora usa os seletores de abas do formulário sem exigir salvar todos os parâmetros antes; valida ambiente e ID antes de associar. Com duplicatas, exige escolha explícita. Se a aba anterior foi fechada e há uma única nova aba válida da cozinha correta, reconecta. Ausência no ambiente normal/anônimo, filtros, leitura incompleta, acesso negado e ID divergente mostram razões distintas. A falha fica no cartão Saipos e em Exportar diagnóstico com IDs técnicos das abas, sem dados de clientes.
+
+A reconexão do listener Saipos remove e registra novamente seu receptor, mesmo quando o número da versão é o mesmo. Isso evita que uma referência antiga impeça nova instalação do leitor. A leitura continua sem efeitos em pedidos e sem alteração de prazos/taxas.
+
+No computador do usuário, foi possível conferir uma aba HTTPS Saipos com P8 65416, estrutura Kanban esperada e sem filtros; isso não comprova que seja a mesma aba acessível ao processo anônimo do José. A instalação atualizada em modo anônimo ainda precisa ser conferida pelo botão Vincular e pelos contadores lidos. Não houve acesso ao dashboard instalado por caminhos alternativos e não foram alterados dados de produção.

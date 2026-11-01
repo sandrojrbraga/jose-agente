@@ -1,3 +1,4 @@
+import {chooseSaipos,linkReadings} from './link-report.mjs';
 import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES} from './context.mjs';
 import {defaults,migrate,validate,inSchedule,demand,adjustment,stepRows,plan} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
@@ -162,14 +163,19 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         const start=Date.now(),d=await get(),c=d.config,t=c.targets.find(t=>t.id===String(m.targetId||c.profile.targetId));
         if(Object.values(d.states).some(s=>s.pending))throw Error('Revalide o envio pendente antes de vincular abas.');
         const source=c.sources.find(s=>s.id===t?.sourceId);if(!source)throw Error('Cadastre e salve a cozinha desta loja antes de vincular.');
-        const kitchens=(await discover()).filter(r=>r.complete&&!r.error&&r.storeId===source.storeId);
-        if(kitchens.length!==1)throw Error('Deixe apenas uma aba Saipos da cozinha esperada aberta neste perfil.');
+        const readings=await discover();let kitchen;
+        try{kitchen=chooseSaipos(readings,source,m.saiposTabId??source.tabId,scope);}
+        catch(e){
+          const tests=(await storage.get(['tests'])).tests||{};tests.saipos={ok:false,error:e.message,storeId:source.storeId,sourceId:source.id,readAt:Date.now(),latencyMs:Date.now()-start,readings:linkReadings(readings)};
+          await storage.set({tests,status:{...d.status,discovery:linkReadings(readings),sources:{...d.status.sources,[source.id]:{error:e.message,capturedAt:Date.now()}}}});throw e;
+        }
         const tabs=await queryTabs({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
-        if(tabs.length!==1)throw Error('Deixe apenas uma aba iFood na tela de entrega aberta neste perfil.');
-        const inspected=auditIfood(await send(tabs[0].id,{type:'JOSE_INSPECT'}),t,null,c);
-        source.tabId=kitchens[0].tabId;t.tabId=tabs[0].id;c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);
+        const preferred=m.ifoodTabId??t.tabId;const matched=Number.isInteger(preferred)?tabs.filter(x=>x.id===preferred):tabs;const portalTabs=matched.length?matched:tabs.length===1?tabs:[];
+        if(portalTabs.length!==1)throw Error('Escolha uma aba iFood válida deste ambiente em Cadastro. Há '+tabs.length+' aba(s) de entrega disponíveis.');
+        const inspected=auditIfood(await send(portalTabs[0].id,{type:'JOSE_INSPECT'}),t,null,c);
+        source.tabId=kitchen.tabId;t.tabId=portalTabs[0].id;c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);
         const portal={...inspected,targetId:t.id,tabId:t.tabId,latencyMs:Date.now()-start};
-        await storage.set({config:validate(c),states:{},portal,status:{at:Date.now(),message:'Duas abas vinculadas. Monitoramento pausado para conferência.',sources:{[source.id]:{...kitchens[0],age:demand(kitchens[0],c)}},results:[]}});
+        await storage.set({config:validate(c),states:{},portal,status:{at:Date.now(),message:'Duas abas vinculadas. Monitoramento pausado para conferência.',sources:{[source.id]:{...kitchen,age:demand(kitchen,c)}},results:[]}});
         return {ok:true,config:c};
       }finally{running=false;}
     }
