@@ -17,7 +17,7 @@ async function send(tabId,m){
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
   }
-  const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood.js'];
+  const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
   if(!r)throw Error('Leitor não respondeu mesmo após reconexão. Confira acesso ao site.');
@@ -120,7 +120,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
       if(running)throw Error('Aguarde o ciclo atual.');running=true;
       try{
         const d=await get(),start=Date.now(),tests=(await chrome.storage.local.get(['tests'])).tests||{};
-        let result;
+        let result,attemptTabId=null,observedName='';
         try{
           const target=d.config.targets.find(t=>t.id===String(m.targetId));
           if(!target)throw Error('Escolha a loja para o teste.');
@@ -128,11 +128,11 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
             const source=d.config.sources.find(s=>s.id===target.sourceId);
             if(!source)throw Error('Vincule a cozinha Saipos deste cadastro antes de testar.');
             let snapshot,tabId=m.tabId??source.tabId;
-            if(Number.isInteger(tabId))snapshot=await send(tabId,{type:'SAIPOS_READ'});
+            if(Number.isInteger(tabId)){attemptTabId=tabId;snapshot=await send(tabId,{type:'SAIPOS_READ'});}
             else{
               const found=(await discover()).filter(r=>r.storeId===source.storeId&&r.complete&&!r.error);
               if(found.length!==1)throw Error(found.length?'Mais de uma aba da mesma cozinha: selecione uma aba na configuração e salve.':'Nenhuma aba desta cozinha disponível neste perfil. Abra o Kanban e use Detectar.');
-              snapshot=found[0];tabId=found[0].tabId;
+              snapshot=found[0];tabId=found[0].tabId;attemptTabId=tabId;
             }
             result={...auditSaipos(snapshot,source,d.config),tabId,sourceId:source.id};
           }else{
@@ -142,10 +142,11 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
               if(found.length!==1)throw Error(found.length?'Escolha uma aba iFood na configuração e salve antes de testar.':'Abra a tela de entrega do iFood neste perfil.');
               tabId=found[0].id;
             }
-            const snapshot=await send(tabId,{type:'JOSE_INSPECT'});
+            attemptTabId=tabId;
+            const snapshot=await send(tabId,{type:'JOSE_INSPECT'});observedName=snapshot.name||'';
             result={...auditIfood(snapshot,target,tests.saipos,d.config),tabId};
           }
-        }catch(e){result={ok:false,error:e.message,readAt:Date.now()};}
+        }catch(e){result={ok:false,error:e.message,readAt:Date.now(),tabId:attemptTabId,observedName,expectedStoreId:String(m.targetId)};}
         result.latencyMs=Date.now()-start;
         const key=m.type==='TEST_SAIPOS'?'saipos':'ifood';tests[key]=result;
         await chrome.storage.local.set({tests});return result;

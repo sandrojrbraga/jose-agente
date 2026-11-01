@@ -9,6 +9,7 @@ export function auditSaipos(snapshot,source,config,now=Date.now()){
 export function auditIfood(snapshot,target,sourceTest,config,now=Date.now()){
   if(snapshot?.error)throw Error(snapshot.error);
   if(!snapshot?.deliveryPage)throw Error('Abra a tela Configurações de entrega no perfil desta loja.');
+  if(!norm(snapshot.name))throw Error('Nome da loja não encontrado no cabeçalho. Não é confirmação de loja diferente; atualize o leitor ou aguarde o carregamento.');
   if(norm(snapshot.name)!==norm(target.name))throw Error(`Loja diferente: esperada ${target.name}; tela mostra ${snapshot.name||'não identificada'}. Nenhuma troca foi realizada.`);
   if(snapshot.unsaved)throw Error('Há alterações não salvas na tela. Confira ou cancele manualmente antes do teste.');
   if(!snapshot.rows?.length)throw Error('Nenhuma faixa foi lida.');

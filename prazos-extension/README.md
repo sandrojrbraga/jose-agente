@@ -1,6 +1,6 @@
 # José — Prazos Saipos e iFood
 
-Extensão Chrome Manifest V3, versão 0.3.0. Até **5 fontes/cozinhas Saipos** e **11 IDs iFood**. José é o executor integrado desta nova extensão; não depende do antigo `comando.json`, do Toqan, de IA ou de uma conversa aberta. Não contém tokens, cookies ou dados de clientes. Não instala software no computador por conta própria.
+Extensão Chrome Manifest V3, versão 0.3.1. Até **5 fontes/cozinhas Saipos** e **11 IDs iFood**. José é o executor integrado desta nova extensão; não depende do antigo `comando.json`, do Toqan, de IA ou de uma conversa aberta. Não contém tokens, cookies ou dados de clientes. Não instala software no computador por conta própria.
 
 ## Estado de validação
 
@@ -90,3 +90,12 @@ Identificação deste perfil:
 A arquitetura completa entre perfis exige uma ponte local autenticada que transporte apenas ID da cozinha, horários, demanda e validade; cada executor deve estar associado ao ID iFood do seu perfil. Essa ponte ainda não foi implementada. Os botões desta versão testam extensão ↔ página do mesmo perfil, não a comunicação entre perfis.
 
 Validação da versão 0.3: 39 testes automatizados passaram, incluindo bloqueio de escrita no perfil leitor, teste iFood estritamente de inspeção, identidade incorreta, dados vencidos e mensagens locais. Ainda falta o teste dos botões na instalação atualizada do usuário. O navegador automatizado não pode observar páginas chrome-extension://; não foi usado um caminho alternativo para contornar esse bloqueio. As páginas normais Saipos e iFood foram conferidas por leitura, identificando P8 65416 e Maraponga.
+
+
+## Correção 0.3.1 — cabeçalho iFood
+
+O diagnóstico enviado pelo usuário mostrou Saipos funcionando e iFood sem nome de loja. A conferência do DOM real da Maraponga identificou o botão data-testid=status-indicator-v2 e seu campo restaurant-profile-name. A seta é renderizada por CSS e não aparece em innerText/textContent. O seletor anterior exigia esse caractere e não encontrava a loja.
+
+A nova leitura usa os identificadores do cabeçalho e do nome; o fallback aceita um único botão de loja sem depender de ícone. Mantém o bloqueio quando o nome diverge ou há ambiguidade. Os erros agora preservam o ID da aba testada, e a ausência do nome é reportada como falha de identificação, não como prova de loja diferente. Foram adicionados testes de regressão e inspeção completa somente de leitura; 43 testes passaram.
+
+Atualizar os arquivos, recarregar a extensão José, fechar a configuração antiga, recarregar a aba iFood e abrir novamente o painel. Repetir Conferir tela iFood com Maraponga e a aba correta, mantendo o monitor pausado/em simulação. Não recriar contas ou alterar prazos para resolver este erro. Ainda falta a execução do teste na instalação atualizada; o sucesso dos testes de código não substitui essa conferência.

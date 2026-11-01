@@ -1,13 +1,14 @@
 (() => {
-  if(window.joseIfoodVersion===3)return;
+  if(window.joseIfoodVersion===4)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=3;
+  window.joseIfoodVersion=4;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
   const normalized=s=>s.trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
   const button=label=>[...document.querySelectorAll('button')].find(e=>visible(e)&&text(e)===label);
-  const header=()=>[...document.querySelectorAll('button')].find(e=>visible(e)&&/^Pizza Pizza/.test(text(e))&&text(e).includes(''));
+  const header=()=>window.JoseIfoodDom.header(document);
+  const storeName=()=>window.JoseIfoodDom.name(header());
   async function until(fn,label,ms=12000) {
     const end=Date.now()+ms;
     while(Date.now()<end){const v=fn();if(v)return v;await pause(200);}
@@ -31,7 +32,7 @@
     });
   }
   function checkHeader(target){
-    if(!header()||normalized(text(header()).replace(/\s*$/,''))!==normalized(target.name))throw Error('A loja selecionada mudou. Operação interrompida.');
+    if(!header()||normalized(storeName())!==normalized(target.name))throw Error('A loja selecionada mudou. Operação interrompida.');
   }
   async function selectTarget(t){
     if(!/^\d+$/.test(t.id)||!t.name)throw Error('Destino inválido.');
@@ -44,7 +45,7 @@
     const option=await until(()=>[...document.querySelectorAll('[role="option"]')].find(e=>visible(e)&&new RegExp('ID\\s*'+t.id+'(?!\\d)').test(text(e))),'ID iFood não encontrado.');
     if(!normalized(text(option)).includes(normalized(t.name)))throw Error('Nome e ID iFood não correspondem.');
     option.click();
-    await until(()=>header()&&normalized(text(header()).replace(/\s*$/,''))===normalized(t.name),'A loja não terminou de carregar.');
+    await until(()=>header()&&normalized(storeName())===normalized(t.name),'A loja não terminou de carregar.');
     // A troca de loja pode remontar o conteúdo depois do cabeçalho.
     await pause(900);
     await until(()=>{try{return readRows().length>0;}catch{return false;}},'Tabela não carregada.');
@@ -81,14 +82,14 @@
       return {ok:true,submitted:true,storeId:m.target.id,expected,before:publicRows(before)};
     } catch(e){
       // Antes de enviar, desfazer somente o preenchimento deste comando.
-      if(!submitted&&header()&&text(header()).includes(m.target.name))button('Cancelar')?.click();
+      if(!submitted&&header()&&normalized(storeName())===normalized(m.target.name))button('Cancelar')?.click();
       return {error:e.message,uncertain:submitted,expected,before:publicRows(before)};
     }
   }
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:header()?text(header()).replace(/\s*$/,'').trim():'',unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ')return {ok:true,rows:publicRows(await selectTarget(m.target))};
       if(m.type==='JOSE_VERIFY'){
         const rows=await selectTarget(m.target);
