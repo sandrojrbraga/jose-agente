@@ -1,56 +1,65 @@
-# José — Prazos Saipos e iFood
+# José — Tempo e taxa Saipos/iFood · v0.4.0
 
-Extensão Chrome Manifest V3, versão 0.3.1. Até **5 fontes/cozinhas Saipos** e **11 IDs iFood**. José é o executor integrado desta nova extensão; não depende do antigo `comando.json`, do Toqan, de IA ou de uma conversa aberta. Não contém tokens, cookies ou dados de clientes. Não instala software no computador por conta própria.
+Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
-## Estado de validação
+## Ambiente recomendado
 
-Código gerado; testes automatizados do cálculo e do fluxo de recuperação executados no ambiente de desenvolvimento. Ainda **não instalada nem homologada de ponta a ponta no Chrome da loja**. Os adaptadores usam o DOM observado no Saipos e no Portal em 31/10/2026; mudanças na interface podem bloquear a operação. Nenhum prazo real foi alterado durante o desenvolvimento. Iniciar em SIMULAÇÃO, com as fontes vinculadas, e comparar o resultado com as telas antes de habilitar execução.
+**Um perfil do Chrome por loja, com uma aba iFood em Configurações de entrega da unidade e uma aba Saipos no Kanban da cozinha correspondente.** Usar sessões autorizadas próprias em cada perfil. Diferentes contas/lojas em abas do mesmo perfil compartilham a sessão e não ficam isoladas. A extensão não cria perfis, usuários nem logins.
 
-## Instalar e configurar
+Escolher a loja em “Loja exclusiva deste perfil Chrome”. Apenas essa loja pode estar habilitada. Antes de importar, executar ou revalidar, o leitor confere o nome da loja atualmente aberta; se divergir, bloqueia antes de abrir o seletor ou preencher campos. Na execução, confirma também o ID no seletor do Portal, selecionando o mesmo cadastro. O diagnóstico somente de leitura confere o nome e informa o ID **esperado**, pois o cabeçalho não expõe diretamente o ID selecionado.
 
-1. Baixar este projeto e extrair. Em `chrome://extensions`, ativar Modo do desenvolvedor e usar **Carregar sem compactação**, selecionando a pasta `extension` (a que contém `manifest.json`). O botão Detectar abas Saipos tenta conectar o leitor mesmo em páginas que já estavam abertas antes da instalação. Se o Chrome negar o acesso ao site, libere o acesso nas permissões da extensão ou recarregue o Kanban.
-2. Abrir o ícone **José → Configurar e acompanhar**. Vincular cada cozinha ao ID Saipos que aparece no cabeçalho. A P8 está pré-cadastrada com ID `65416`; confirmar antes de usar. Não duplicar fontes para uma cozinha compartilhada.
-3. Vincular as abas abertas. Configurar até onze IDs iFood, nomes exatos e a cozinha de origem. Os 11 nomes e IDs foram conferidos no seletor do Portal. Maraponga/Jardim Cearense/Parangaba estão vinculados à P8 e habilitados para simulação; os demais aguardam escolha da cozinha. O monitor geral começa pausado e não há escrita no modo simulado. O limite de onze é por cadastro iFood, não por operação física com múltiplas dark kitchens.
-4. Conferir o significado do campo Tempo no Portal: a fórmula atual é **base da faixa + idade do pedido mais antigo em Cozinha**. Não habilitar a confirmação se o campo representar apenas transporte ou se o preparo já estiver sendo acrescido por outro mecanismo. A idade não é multiplicada pelo número de pizzas.
-5. Preencher todas as faixas existentes na mesma ordem, como `0.5;19;6.99`. Para um intervalo 7–10 km, usar o limite superior `10`. A faixa 10–20 usa `20`. As faixas não são criadas nem removidas no Portal. A tabela inicial é proposta, não captura da loja. **Ler faixas atuais do Portal** permite importar a tabela exibida após confirmação; se ela já estiver inflada pela demanda, corrigir manualmente a base.
-6. Definir limite de prazo, passo e leituras para redução. `120 min` é apenas valor inicial editável, não limite operacional previamente aprovado. Acima do limite, bloquear e informar, sem prometer um prazo menor artificialmente.
-7. Escolher dias, início e fim. Exemplo: sexta 14h–02h cobre sábado até 01h59. No fim, para novos ajustes; **não restaura automaticamente valores no fechamento**. O retorno à base ocorre durante a operação quando a demanda cai e as leituras continuam válidas.
-8. Salvar em SIMULAÇÃO, habilitar os destinos desejados e usar **Consultar agora**. O modo simulado não seleciona nem escreve no Portal. Compare cada faixa, inclusive balcão na cozinha. Depois da conferência, escolher EXECUÇÃO, confirmar a semântica, habilitar o horário e salvar. A confirmação da tela pede consentimento para as alterações reais.
+O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel leitor só simula; o papel executor isolado só permite testes, pois a ponte entre perfis não está implementada. Cada perfil guarda configuração e histórico próprios. Não há painel central entre perfis nesta versão.
 
-## Operação e recuperação
+## Instalação e atualização
 
-- O Chrome consulta periodicamente com `chrome.alarms` (padrão 30 segundos, sujeito a atraso do navegador), mantém configuração e resultados no armazenamento local e recria seu agendamento ao iniciar. Computador e Chrome precisam estar ligados e as sessões, autenticadas. Não acorda um computador suspenso, não inicia o Windows/Chrome e não faz login automaticamente.
-- Atua apenas nas abas **deste perfil Chrome**. Não lê outros perfis nem outros computadores. Para fontes em perfis distintos, é necessário instalar e configurar por perfil, ou desenvolver uma ponte central separada; essa ponte não faz parte desta versão.
-- Após reiniciar, tenta recuperar a fonte pelo ID Saipos e uma aba de Entrega aberta. Se houver duplicidade, ausência ou mudança de loja, bloqueia. Nunca soma duas cópias do mesmo Kanban.
-- Lê os cartões montados no DOM, inclusive fora da área visível; compara com o contador. Lista virtualizada ou carregamento parcial bloqueia o cálculo. Não lê APIs internas ou credenciais. Dados enviados ao executor contêm apenas identificador técnico, data/horário e contagem; nomes, telefone e endereço não são capturados.
-- O executor serializa os destinos porque o Portal compartilha a seleção da loja entre abas. Seleciona o ID no seletor, confere nome, raios, campos, limites e ausência de alterações manuais não salvas. Não usar o Portal manualmente durante o envio. Mudança detectada bloqueia a escrita.
-- Preserva taxas por padrão. O modo **Aplicar taxa fixa configurada** é explícito e independente da demanda: ela não muda com a fila. Não altera cardápio, promoções, pedidos, abertura de loja ou negociações com clientes.
-- Antes de enviar, persiste o comando. Depois de salvar, recarrega a página e relê os valores. Resultado incerto bloqueia novos envios para o destino. **Revalidar envios pendentes** apenas compara valores; não reenvia. Se não conferirem, verificar manualmente a loja e diagnosticar antes de retomar. O histórico local guarda até 250 eventos.
-- Pausar impede novos destinos; uma ação já enviada pode terminar. Se houver falha de fonte, conserva o último valor confirmado e reinicia a sequência de leituras para redução. Aumenta imediatamente; reduz em etapas após duas ou mais leituras válidas. Nunca diminui abaixo da base.
+1. Extrair o ZIP do projeto. A pasta para carregar é `prazos-extension/extension`, que contém manifest.json.
+2. Em chrome://extensions, ativar modo desenvolvedor e carregar sem compactação. Se já instalado, substituir os arquivos da pasta instalada e clicar **Recarregar**. Não manter duas versões ativas. Carregar outra pasta pode criar outro ID e outro armazenamento.
+3. Recarregar Saipos e iFood, fechar a configuração antiga e abrir o painel pelo ícone José. A atualização de configurações anteriores preserva bases personalizadas, adiciona os novos campos e pausa em simulação. Maraponga é a loja inicial quando não há escolha de perfil anterior.
+4. Escolher a loja do perfil e vincular a cozinha e as duas abas. P8 já tem ID Saipos 65416, ligado a Maraponga/Jardim Cearense/Parangaba. As demais cozinhas aguardam os IDs corretos.
+5. Executar os dois testes de leitura antes de ativar. Falhas podem ser exportadas em **Exportar diagnóstico**.
 
-## Testes
+## Parâmetros por loja
 
-Requer Node.js 20+; sem dependências externas:
+O painel mostra apenas a loja escolhida para o perfil, com tabelas editáveis:
 
-```sh
-npm test
-npm run check
-```
+- **Faixas por km:** limite superior da faixa, tempo-base inteiro em minutos e taxa-base em reais. Cadastrar todas as faixas existentes na mesma ordem do Portal. Para 7–10 km, usar 10. Não cria nem remove faixas no iFood.
+- **Patamares de volume:** “a partir de X pedidos”, acréscimo de minutos e acréscimo de taxa. Os limites X não foram definidos pelo usuário e começam vazios. Adicionar linhas não ativa a execução; revisar e salvar.
+- **Métrica de volume:** Cozinha, ou Cozinha + Aguardando entrega. Inclui todos os canais da cozinha, inclusive balcão. Pedidos que já saíram para entrega não entram nesses patamares. Em cozinha compartilhada, a fila inteira alimenta cada loja vinculada, e cada loja aplica suas próprias regras.
+- **Taxas:** preservar a existente (padrão), usar taxa-base fixa, ou taxa-base + acréscimo por volume. O modo por demanda exige taxa-base em todas as faixas e pelo menos um patamar.
+- **Tetos e retorno:** prazo máximo, taxa máxima e redução da taxa por etapa. O teto de taxa inicial de R$30 e o teto de prazo de 120 min são propostas editáveis, não parâmetros aprovados para a operação. Se a configuração exceder o teto, é rejeitada, sem cortar artificialmente valores.
 
-A versão 0.2 adiciona testes do leitor DOM, do cenário sem receptor e da migração das 11 lojas. Os testes não substituem a homologação no Portal real: seleção de loja, controles React, sincronização entre abas, salvamento e persistência precisam ser conferidos no computador da loja. O registro `comando.json` antigo na raiz do repositório permanece intocado; esta extensão não o executa.
+O patamar mais alto atingido determina os acréscimos. Os patamares **não se somam**:
 
+`Tempo = base da faixa + idade do pedido mais antigo em Cozinha + acréscimo do patamar`
 
-## Correções da versão 0.2
+`Taxa por demanda = taxa-base da faixa + acréscimo do patamar`
 
-- Recuperação do leitor em abas que já estavam abertas, com permissão scripting restrita aos dois sites. Repetir a conexão não duplica os leitores. Resultado incerto de escrita nunca é reenviado automaticamente.
-- Botão Detectar abas Saipos, diagnóstico por ID e contadores, painel de fontes lidas e botões para abrir os sites como abas normais. Não usa iframe ou navegação embutida.
-- Migração do cadastro para 11 lojas, preservando valores personalizados de IDs existentes e pausando a operação em simulação. IDs antigos de abas podem mudar: detectar novamente depois de atualizar.
-- Normalização de espaços (incluindo espaços não separáveis) nos nomes do iFood.
-- Fontes ainda não associadas são mostradas como pendência. Não se inventa o ID Saipos das outras cozinhas. Vincular cada destino à fonte correta antes da execução real.
+Exemplo apenas ilustrativo, não pré-configurado: base R$6,99; patamar de 10 pedidos acrescenta R$1; patamar de 20 acrescenta R$2. Com 20 pedidos, a taxa é R$8,99. Não vira R$9,99 e não cresce novamente a cada ciclo. O mesmo acréscimo em reais é aplicado às taxas-base das faixas da loja.
 
-### Catálogo conferido no Portal, 31/10/2026
+Aumentos são imediatos no ciclo válido. Reduções precisam de duas ou mais leituras consecutivas, com passos independentes para tempo e taxa, até voltar exatamente à base. A leitura inválida mantém o último ajuste confirmado e reinicia as contagens de redução. Valores não acumulam sobre o preço/prazo atual do Portal. O monitor não pausa a loja.
 
-| Loja | ID iFood | Fonte Saipos pré-vinculada |
+**Confirmar a semântica de “Tempo” antes de habilitar a escrita:** a fórmula pressupõe prazo total, sem duplicar um preparo já somado por outro mecanismo. A idade não é multiplicada pela quantidade de pizzas. “Ler faixas atuais do Portal” importa o que está exibido; se já houver reajuste, corrigir a base antes de salvar.
+
+## Painel e horário
+
+A navegação organiza visão da operação, perfil e conexão, parâmetros, horário/retorno, testes e salvamento. O ciclo mostra volume, patamar, produção, acréscimo de taxa e valores por km. Os campos de taxa aceitam até duas casas decimais.
+
+Configurar dias, início/fim e intervalo (mínimo 30 segundos). Um expediente de sexta 14h–02h inclui sábado até 01h59. O fim do horário interrompe novos ajustes e **mantém os últimos valores**, sem restauração automática no fechamento. O retorno à base ocorre durante a operação com leituras válidas e queda de demanda.
+
+Chrome, computador e sessões precisam estar ativos; alarmes podem atrasar. A extensão não inicia o Windows/Chrome, não acorda o computador e não faz login. “Consultar agora” simula enquanto pausado; modo real pausado não escreve. Depois de conferir os cálculos, confirmar a semântica, selecionar execução, habilitar a loja e o horário e salvar.
+
+## Segurança e recuperação operacional
+
+- Lê o DOM, sem credenciais ou APIs internas. Captura somente IDs técnicos, horários e contagens; não coleta nome, telefone ou endereço dos clientes.
+- Leitura parcial, filtros ativos, relógio desatualizado, aba ausente/ambígua, loja diferente, tabela divergente ou rascunho manual não salvo bloqueiam ajustes. Não somar abas duplicadas da mesma cozinha.
+- O leitor iFood antigo é atualizado por uma inspeção sem efeitos antes de comandos, para evitar aplicar regras novas com código antigo.
+- Antes de enviar, persiste o comando; após salvar, recarrega e relê. Resultado incerto bloqueia novos envios. **Revalidar envios pendentes** apenas compara, sem reenviar. Recuperação preserva também o estado de redução da taxa.
+- Pausar interrompe novas operações; uma operação já enviada pode terminar. Não usar manualmente o Portal durante os ajustes. Histórico local de até 250 eventos.
+- Não altera pedidos, cardápio, promoções, abertura/pausa da loja nem negociações com clientes.
+
+## Catálogo
+
+| Loja | ID iFood | Fonte inicial |
 |---|---|---|
 | Aquiraz | 3469536 | Pendente |
 | Jardim Cearense | 3450370 | P8, 65416 |
@@ -64,38 +73,15 @@ A versão 0.2 adiciona testes do leitor DOM, do cenário sem receptor e da migra
 | Porto das Dunas | 3521123 | Pendente |
 | Prainha | 3521126 | Pendente |
 
-### Sessões e usuários dedicados
+Nomes e IDs conferidos no Portal em 31/10/2026. A tabela-base inicial é uma proposta; não foi importada de todas as lojas.
 
-O cadastro de usuários por cozinha/loja ajuda a limitar acesso e identificar ações, mas não isola o login de abas no mesmo perfil. Para telas realmente independentes, usar perfis Chrome separados e sessões próprias. A extensão pode ser instalada por perfil; cada perfil tem sua configuração e seus leitores. Um painel que concentre todos os perfis requer uma ponte local/coordenador ainda NÃO incluído nesta versão. Não cadastrar usuários nem copiar credenciais automaticamente.
+## Validação
 
-### Atualização
+Requer Node.js 20+, sem dependências externas:
 
-Substituir os arquivos da pasta instalada pela pasta extension desta versão, abrir chrome://extensions e clicar Recarregar na extensão José. Fechar as páginas de configuração antigas e abrir novamente pelo ícone. Usar Detectar abas Saipos, conferir ID 65416 e contadores, revisar as cozinhas associadas e testar em simulação. Se o ID da extensão mudar ao carregar outra pasta, a configuração anterior ficará no perfil da instalação antiga; a nova usa o catálogo pré-configurado. Não manter duas versões ativas ao mesmo tempo.
+```sh
+npm test
+npm run check
+```
 
-
-## Versão 0.3 — diagnóstico local por perfil
-
-Esta versão adiciona dois testes independentes, com Maraponga (3148479) selecionada inicialmente. Os testes funcionam com o monitor pausado e não habilitam a execução. Não é necessário ligar o modo real para testar a conexão.
-
-1. No perfil com Saipos P8, selecionar a aba correta e clicar **1 · Testar leitura Saipos**. Resultado esperado: ID 65416, contadores Cozinha/Aguardando entrega/Saiu para entrega, tempo do pedido mais antigo, horário da leitura e latência. Se houver mais de uma cópia do Kanban, escolher explicitamente a aba; nunca somar cópias da mesma cozinha.
-2. No perfil com iFood Maraponga, abrir manualmente Configurações de entrega, selecionar essa aba e clicar **2 · Conferir tela iFood**. O teste lê a loja atualmente aberta, raios, minutos e taxas; não abre seletor de loja, não digita e não salva. Loja diferente, valores inválidos e alterações manuais ainda não salvas bloqueiam o teste.
-3. Conferir os resultados com as telas. O ID iFood é mostrado como **ID esperado configurado**, pois o cabeçalho observado fornece o nome, não o ID selecionado. A correspondência do nome e a leitura da tabela não substituem a confirmação do ID e da semântica antes de liberar escrita.
-4. Se os dois testes ocorrerem no mesmo perfil, a comparação dos prazos pode usar o último teste Saipos, desde que a leitura continue válida e o vínculo da cozinha corresponda. Se ocorrerem em perfis separados, os resultados são independentes: não presumir transferência de dados. Usar **Exportar diagnóstico** em cada perfil para conferir os resultados.
-
-Identificação deste perfil:
-- **Saipos + iFood neste perfil**: mantém o fluxo local existente.
-- **Somente leitor Saipos**: calcula em simulação e não envia alterações ao Portal.
-- **Somente iFood — testes locais; ponte pendente**: permite conferir o Portal, mas não inicia ajustes nem presume acesso a outro perfil.
-
-A arquitetura completa entre perfis exige uma ponte local autenticada que transporte apenas ID da cozinha, horários, demanda e validade; cada executor deve estar associado ao ID iFood do seu perfil. Essa ponte ainda não foi implementada. Os botões desta versão testam extensão ↔ página do mesmo perfil, não a comunicação entre perfis.
-
-Validação da versão 0.3: 39 testes automatizados passaram, incluindo bloqueio de escrita no perfil leitor, teste iFood estritamente de inspeção, identidade incorreta, dados vencidos e mensagens locais. Ainda falta o teste dos botões na instalação atualizada do usuário. O navegador automatizado não pode observar páginas chrome-extension://; não foi usado um caminho alternativo para contornar esse bloqueio. As páginas normais Saipos e iFood foram conferidas por leitura, identificando P8 65416 e Maraponga.
-
-
-## Correção 0.3.1 — cabeçalho iFood
-
-O diagnóstico enviado pelo usuário mostrou Saipos funcionando e iFood sem nome de loja. A conferência do DOM real da Maraponga identificou o botão data-testid=status-indicator-v2 e seu campo restaurant-profile-name. A seta é renderizada por CSS e não aparece em innerText/textContent. O seletor anterior exigia esse caractere e não encontrava a loja.
-
-A nova leitura usa os identificadores do cabeçalho e do nome; o fallback aceita um único botão de loja sem depender de ícone. Mantém o bloqueio quando o nome diverge ou há ambiguidade. Os erros agora preservam o ID da aba testada, e a ausência do nome é reportada como falha de identificação, não como prova de loja diferente. Foram adicionados testes de regressão e inspeção completa somente de leitura; 43 testes passaram.
-
-Atualizar os arquivos, recarregar a extensão José, fechar a configuração antiga, recarregar a aba iFood e abrir novamente o painel. Repetir Conferir tela iFood com Maraponga e a aba correta, mantendo o monitor pausado/em simulação. Não recriar contas ou alterar prazos para resolver este erro. Ainda falta a execução do teste na instalação atualizada; o sucesso dos testes de código não substitui essa conferência.
+Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.

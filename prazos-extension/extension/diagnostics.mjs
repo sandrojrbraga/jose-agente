@@ -1,4 +1,4 @@
-import {demand} from './core.mjs';
+import {demand,volumeRule} from './core.mjs';
 export const norm=s=>String(s||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
 export function auditSaipos(snapshot,source,config,now=Date.now()){
   if(snapshot?.error)throw Error(snapshot.error);
@@ -18,14 +18,14 @@ export function auditIfood(snapshot,target,sourceTest,config,now=Date.now()){
     if(!Number.isFinite(r.km)||r.km<=last||!Number.isInteger(r.minutes)||r.minutes<1||r.minutes>1440||!Number.isFinite(r.fee)||r.fee<0)throw Error('Tabela contém raio, prazo ou taxa inválida.');
     last=r.km;
   }
-  let productionMinutes=null;
+  let productionMinutes=null,rule=null;
   const source=config.sources.find(s=>s.id===target.sourceId);
-  if(sourceTest?.ok&&source&&sourceTest.storeId===source.storeId&&now-sourceTest.readAt<=config.staleSeconds*1000)productionMinutes=sourceTest.productionMinutes;
+  if(sourceTest?.ok&&source&&sourceTest.storeId===source.storeId&&now-sourceTest.readAt<=config.staleSeconds*1000){productionMinutes=sourceTest.productionMinutes;rule=volumeRule(target,sourceTest);}
   return {ok:true,readAt:snapshot.capturedAt,name:snapshot.name,configuredStoreId:target.id,
     selectedIdVerified:false,identityNote:'Nome conferido. O ID selecionado não é exibido no cabeçalho; o ID acima é o cadastro esperado, não uma leitura direta do Portal.',
     productionMinutes,rows:snapshot.rows.map(r=>{
       const base=target.bands.find(b=>b.km===r.km);
-      const proposed=base&&productionMinutes!==null?base.minutes+productionMinutes:null;
-      return {...r,baseMinutes:base?.minutes??null,proposedMinutes:proposed,difference:proposed===null?null:r.minutes-proposed};
-    }),note:'Comparação com parâmetros salvos. Divergência não prova erro: confirme a tabela-base e o significado do campo Tempo. Nenhum valor foi alterado.'};
+      const proposed=base&&productionMinutes!==null?base.minutes+productionMinutes+(rule?.extraMinutes||0):null;
+      return {...r,proposedFee:target.feeMode==='preserve'?r.fee:base?.fee==null?null:target.feeMode==='demand'?(rule?Math.round((base.fee+rule.extraFee)*100)/100:null):base.fee,baseMinutes:base?.minutes??null,proposedMinutes:proposed,difference:proposed===null?null:r.minutes-proposed};
+    }),note:'Comparação com parâmetros salvos; previsão imediata, sem considerar a redução gradual do monitor. Divergência não prova erro: confirme a tabela-base e o significado do campo Tempo. Nenhum valor foi alterado.'};
 }

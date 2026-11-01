@@ -29,3 +29,29 @@ test('full content listener reads Maraponga and table without clicking or typing
   const r=await new Promise(resolve=>callbacks[0]({type:'JOSE_INSPECT'},{id:'test'},resolve));
   assert.equal(r.error,undefined);assert.equal(r.name,'Pizza Pizza - Maraponga');assert.equal(r.rows[0].minutes,25);assert.equal(r.rows[0].fee,6.99);
 });
+
+test('pinned profile refuses a different current store before any selector or write',async()=>{
+  const {document,header}=setup(),window={},callbacks=[];let clicks=0;header.click=()=>clicks++;
+  const context={window,document,location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>callbacks.push(f),removeListener(){}}}},setTimeout};
+  vm.runInNewContext(helper,context);vm.runInNewContext(content,context);
+  const r=await new Promise(resolve=>callbacks[0]({type:'JOSE_EXECUTE',expiresAt:Date.now()+60000,target:{id:'3179932',name:'Pizza Pizza - Parangaba',profilePinned:true},rows:[]},{id:'test'},resolve));
+  assert.match(r.error,/loja selecionada mudou/);assert.equal(clicks,0);
+});
+test('content executor fills demand fee and preserves fees in preserve mode',async()=>{
+  for(const mode of ['demand','preserve']){
+    let saved=0,listener;const window={};
+    const save={...visible,innerText:'Salvar',disabled:true,click(){saved++;this.disabled=true;}};
+    class Input {constructor(value){this._value=value;this.disabled=false;}get value(){return this._value;}set value(v){this._value=v;}dispatchEvent(){}blur(){save.disabled=false;}}
+    const time=new Input('19'),fee=new Input('6,99'),search=new Input('');
+    const label={innerText:'Pizza Pizza - Maraponga'};
+    const header={...visible,innerText:label.innerText,querySelector:()=>label,click(){}};label.closest=()=>header;
+    const swap={...visible,innerText:'Trocar loja',click(){}};
+    const option={...visible,innerText:'Pizza Pizza - Maraponga ID 3148479',click(){save.disabled=true;}};
+    const row={...visible,innerText:'0.5 km',querySelector:s=>s.includes('.time')?time:fee};
+    const document={querySelector:s=>s.includes('status-indicator-v2')?header:s.includes('restaurant-profile-name')?label:s.includes('Busque pelo nome ou ID')?search:null,querySelectorAll:s=>s==='button'?[header,swap,save]:s==='[role="option"]'?[option]:s==='[aria-label="table-row"]'?[row]:[]};
+    const context={window,document,HTMLInputElement:Input,Event:class{},location:{pathname:'/merchant-delivery-core-portal-experience'},chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f,removeListener(){}}}},setTimeout:f=>setTimeout(f,0)};
+    vm.runInNewContext(helper,context);vm.runInNewContext(content,context);
+    const r=await new Promise(resolve=>listener({type:'JOSE_EXECUTE',expiresAt:Date.now()+60000,target:{id:'3148479',name:label.innerText,profilePinned:true,feeMode:mode,semanticsConfirmed:true,maxMinutes:120,maxFee:30},rows:[{km:.5,minutes:33,fee:9.99}]},{id:'test'},resolve));
+    assert.equal(r.error,undefined);assert.equal(r.ok,true);assert.equal(saved,1);assert.equal(time.value,'33');assert.equal(fee.value,mode==='demand'?'9,99':'6,99');assert.equal(r.expected[0].fee,mode==='demand'?9.99:6.99);
+  }
+});

@@ -1,7 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===4)return;
+  if(window.joseIfoodVersion===5)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=4;
+  window.joseIfoodVersion=5;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -36,6 +36,7 @@
   }
   async function selectTarget(t){
     if(!/^\d+$/.test(t.id)||!t.name)throw Error('Destino inválido.');
+    if(t.profilePinned)checkHeader(t);
     const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal. Não serão substituídas.');
     (await until(header,'Cabeçalho da loja ausente.')).click();
     const swap=await until(()=>[...document.querySelectorAll('button')].find(e=>visible(e)&&text(e).includes('Trocar loja')),'Seletor de loja indisponível.');
@@ -61,15 +62,15 @@
     if(m.preview)return {ok:true,storeId:m.target.id,before:publicRows(before)};
     if(!m.target.semanticsConfirmed)throw Error('Significado do campo Tempo não confirmado.');
     if(Date.now()>m.expiresAt)throw Error('Leitura venceu durante a seleção.');
-    const expected=m.rows.map((b,i)=>({km:b.km,minutes:b.minutes,fee:m.target.feeMode==='configured'?b.fee:before[i].fee}));
-    if(expected.some(b=>!Number.isInteger(b.minutes)||b.minutes<1||b.minutes>m.target.maxMinutes||!Number.isFinite(b.fee)||b.fee<0))throw Error('Valores fora dos limites.');
+    const expected=m.rows.map((b,i)=>({km:b.km,minutes:b.minutes,fee:m.target.feeMode!=='preserve'?b.fee:before[i].fee}));
+    if(expected.some(b=>!Number.isInteger(b.minutes)||b.minutes<1||b.minutes>m.target.maxMinutes||!Number.isFinite(b.fee)||b.fee<0||(m.target.feeMode==='demand'&&b.fee>m.target.maxFee)))throw Error('Valores fora dos limites.');
     if(before.every((b,i)=>b.minutes===expected[i].minutes&&b.fee===expected[i].fee))return {ok:true,unchanged:true,storeId:m.target.id,expected};
     let submitted=false;
     try {
       for(let i=0;i<before.length;i++){
         checkHeader(m.target);if(Date.now()>m.expiresAt)throw Error('Cálculo vencido antes de salvar.');
         setInput(before[i].timeInput,expected[i].minutes);
-        if(m.target.feeMode==='configured')setInput(before[i].feeInput,expected[i].fee.toFixed(2).replace('.',','));
+        if(m.target.feeMode!=='preserve')setInput(before[i].feeInput,expected[i].fee.toFixed(2).replace('.',','));
       }
       await pause(250);checkHeader(m.target);
       if(!readRows().every((b,i)=>b.minutes===expected[i].minutes&&b.fee===expected[i].fee))throw Error('Preenchimento não persistiu na tela.');
@@ -89,7 +90,7 @@
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:5,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ')return {ok:true,rows:publicRows(await selectTarget(m.target))};
       if(m.type==='JOSE_VERIFY'){
         const rows=await selectTarget(m.target);

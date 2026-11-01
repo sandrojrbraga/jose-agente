@@ -1,4 +1,4 @@
-import {defaults,migrate,validate,inSchedule,demand,nextOffset,plan} from './core.mjs';
+import {defaults,migrate,validate,inSchedule,demand,adjustment} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
 let running=false;
 const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{}};};
@@ -10,9 +10,11 @@ async function send(tabId,m){
   const tab=await chrome.tabs.get(tabId);
   const origin=m.type==='SAIPOS_READ'?'https://conta.saipos.com/':'https://portal.ifood.com.br/';
   if(!tab.url?.startsWith(origin))throw Error('Aba fechada ou endereço diferente do autorizado.');
+  // Homologar protocolo antes de qualquer comando com efeito: abas antigas podem ter leitor anterior.
+  if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r)return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===5))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -20,7 +22,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r)throw Error('Leitor não respondeu mesmo após reconexão. Confira acesso ao site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==5))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -28,7 +30,7 @@ async function verifyReload(target,expected){
   for(let i=0;i<30;i++){
     await delay(500);const tab=await chrome.tabs.get(target.tabId);
     if(tab.status!=='complete')continue;
-    try{return await send(target.tabId,{type:'JOSE_VERIFY',target,expected});}catch(e){if(i===29)throw e;}
+    try{return await send(target.tabId,{type:'JOSE_VERIFY',target:{...target,profilePinned:true},expected});}catch(e){if(i===29)throw e;}
   }
   throw Error('Não foi possível reler o prazo depois de recarregar.');
 }
@@ -49,9 +51,9 @@ async function tick(manual=false){
     if(c.profile?.role==='executor'){await chrome.storage.local.set({status:{...d.status,message:'Perfil iFood: testes disponíveis; comunicação com o perfil Saipos ainda não conectada.'}});return;}
     if(c.profile?.role==='reader')c.mode='simulate';
     if(!c.enabled&&(!manual||c.mode==='live')){await chrome.storage.local.set({status:{...d.status,message:'Pausado — clique Consultar agora para diagnóstico em simulação'}});return;}
-    if(!inSchedule(Date.now(),c)&&(!manual||c.mode==='live')){for(const s of Object.values(states))s.lowerCount=0;await chrome.storage.local.set({states,status:{at:Date.now(),message:'Fora do horário programado'}});return;}
+    if(!inSchedule(Date.now(),c)&&(!manual||c.mode==='live')){for(const s of Object.values(states)){s.lowerCount=0;s.feeLowerCount=0;}await chrome.storage.local.set({states,status:{at:Date.now(),message:'Fora do horário programado'}});return;}
     const sources={};
-    for(const s of c.sources){
+    for(const s of c.sources.filter(s=>c.targets.some(t=>t.enabled&&t.sourceId===s.id))){
       try {
         let r;
         try {r=await send(s.tabId,{type:'SAIPOS_READ'});}catch{}
@@ -72,22 +74,22 @@ async function tick(manual=false){
       const key=c.mode+':'+t.id,st=states[key]||{};
       try {
         if(st.pending)throw Error('Resultado anterior pendente. Use Revalidar antes de outro envio.');
-        const source=sources[t.sourceId];if(!source||source.error){st.lowerCount=0;states[key]=st;throw Error(source?.error||'Sem fonte.');}
-        const desired=demand(source,c),next=nextOffset(desired,st,c),rows=plan(t,next.offset);
+        const source=sources[t.sourceId];if(!source||source.error){st.lowerCount=0;st.feeLowerCount=0;states[key]=st;throw Error(source?.error||'Sem fonte.');}
+        const calc=adjustment(t,source,st,c),{next,rows,productionMinutes:desired}=calc;
         if(c.mode==='simulate'){
           // Simulação não muda o Portal nem o estado de execução real.
-          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,rows});continue;
+          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows});continue;
         }
         if(!(await get()).config.enabled||!inSchedule(Date.now(),c))break;
         let bound;try{bound=await chrome.tabs.get(t.tabId);}catch{}
         if(!bound?.url?.startsWith('https://portal.ifood.com.br/merchant-delivery-core-portal-experience')){
           const candidates=await chrome.tabs.query({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
-          if(!candidates.length)throw Error('Abra a tela de entrega do Portal iFood neste perfil.');
+          if(candidates.length!==1)throw Error('Vincule exatamente uma aba de entrega iFood neste perfil.');
           t.tabId=candidates[0].id;await bind('targets',t.id,t.tabId);
         }
-        const job={type:'JOSE_EXECUTE',id:crypto.randomUUID(),target:t,rows,expiresAt:source.capturedAt+c.staleSeconds*1000};
+        const job={type:'JOSE_EXECUTE',id:crypto.randomUUID(),target:{...t,profilePinned:true},rows,expiresAt:source.capturedAt+c.staleSeconds*1000};
         // Persistir antes do primeiro efeito externo; recuperação nunca reenvia às cegas.
-        states[key]={...st,pending:{job,offset:next.offset,lowerCount:next.lowerCount}};
+        states[key]={...st,pending:{job,...next}};
         await chrome.storage.local.set({states});
         const r=await send(t.tabId,job);
         if(!r.ok){if(!r.uncertain){delete states[key].pending;await chrome.storage.local.set({states});}throw Error(r.error||'Envio não confirmado.');}
@@ -95,9 +97,9 @@ async function tick(manual=false){
         await chrome.storage.local.set({states});
         if(!r.unchanged){const check=await verifyReload(t,r.expected);if(!check.ok)throw Error(check.error||'Prazo não confirmado após recarga.');}
         states[key]={...next};
-        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,rows,verified:true});
+        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true});
         await log({storeId:t.id,type:r.unchanged?'unchanged':'saved',jobId:job.id,before:r.before,after:r.expected});
-      }catch(e){if(states[key])states[key].lowerCount=0;results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
+      }catch(e){if(states[key]){states[key].lowerCount=0;states[key].feeLowerCount=0;}results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
       await chrome.storage.local.set({states});
     }
     const status={at:Date.now(),message:results.length?'Ciclo concluído':'Habilite pelo menos um destino para simular.',sources,results};
@@ -184,7 +186,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     if(m.type==='TICK')return tick(true);
     if(m.type==='READ_PORTAL'){
       if(running)throw Error('Aguarde o ciclo atual.');
-      running=true;try{return await send(m.target.tabId,{type:'JOSE_READ',target:m.target});}finally{running=false;}
+      running=true;try{return await send(m.target.tabId,{type:'JOSE_READ',target:{...m.target,profilePinned:true}});}finally{running=false;}
     }
     if(m.type==='REVERIFY'){
       if(running)throw Error('Ciclo em execução.');running=true;
@@ -193,9 +195,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         for(const [key,s] of Object.entries(d.states))if(s.pending){
           const p=s.pending;
           const expected=p.expected||p.job.rows.map(b=>({...b,fee:p.job.target.feeMode==='preserve'?null:b.fee}));
-          const check=await send(p.job.target.tabId,{type:'JOSE_VERIFY',target:p.job.target,expected});
+          const check=await send(p.job.target.tabId,{type:'JOSE_VERIFY',target:{...p.job.target,profilePinned:true},expected});
           if(!check.ok)throw Error(check.error||'Valores ainda não conferem. Não houve reenvio.');
-          d.states[key]={offset:p.offset,lowerCount:p.lowerCount};count++;
+          d.states[key]={offset:p.offset,lowerCount:p.lowerCount,feeOffsetCents:p.feeOffsetCents,feeLowerCount:p.feeLowerCount};count++;
         }
         await chrome.storage.local.set({states:d.states});return {ok:true,count};
       }finally{running=false;}

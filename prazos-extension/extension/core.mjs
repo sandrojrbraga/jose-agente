@@ -1,4 +1,4 @@
-export const VERSION = 3;
+export const VERSION = 4;
 export const STORE_CATALOG = [
  ['3469536','Pizza Pizza Aquiraz'],
  ['3450370','Pizza Pizza - Jardim Cearense','p8'],
@@ -13,32 +13,36 @@ export const STORE_CATALOG = [
  ['3521126','Pizza Pizza - Prainha']
 ];
 export const defaults = () => ({
-  version: VERSION, profile:{label:'Maraponga / P8 — teste',role:'local'}, enabled: false, mode: 'simulate', timezone: 'America/Fortaleza',
+  version: VERSION, profile:{label:'Maraponga / P8 — teste',role:'local',targetId:'3148479'}, enabled: false, mode: 'simulate', timezone: 'America/Fortaleza',
   schedule: {days: [0,1,2,3,4,5,6], start: '14:00', end: '02:00'},
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
   targets: STORE_CATALOG.map(([id,name,sourceId])=>({id,name,sourceId:sourceId||'',
-    enabled:!!sourceId,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',
+    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
     bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,fee:null}))}))
 });
 export function migrate(old){
   if(!old)return defaults();
   if(old.version===VERSION)return old;
-  if(![1,2].includes(old.version))throw Error('Versão de configuração desconhecida.');
+  if(![1,2,3].includes(old.version))throw Error('Versão de configuração desconhecida.');
   const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
   const fresh=defaults().targets;
   c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
-  c.targets.forEach(t=>{t.id=String(t.id);t.semanticsConfirmed=false;});
+  c.profile={...defaults().profile,...old.profile,targetId:old.profile?.targetId||'3148479'};
+  c.targets.forEach(t=>{t.id=String(t.id);t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
   return c;
 }
 
 const fail = m => {throw new Error(m);};
+const cents=n=>Math.abs(n*100-Math.round(n*100))<1e-7;
 const finite = (n,min,max,label) => {
   if(typeof n !== 'number'||!Number.isFinite(n)||n<min||n>max) fail(label);
 };
 export function validate(c) {
   if(c.version!==VERSION||!['simulate','live'].includes(c.mode)) fail('Versão ou modo inválido.');
   if(typeof c.enabled!=='boolean') fail('Estado de execução inválido.');
+  if(!c.targets?.some(t=>t.id===c.profile?.targetId))fail('Selecione a loja deste perfil.');
+  if(c.targets?.some(t=>t.enabled&&t.id!==c.profile.targetId))fail('Habilite somente a loja vinculada a este perfil Chrome.');
   if(c.profile&&!['local','reader','executor'].includes(c.profile.role))fail('Papel do perfil inválido.');
   try {new Intl.DateTimeFormat('pt-BR',{timeZone:c.timezone}).format();} catch {fail('Fuso inválido.');}
   if(!Array.isArray(c.sources)||!c.sources.length||c.sources.length>5) fail('Cadastre de 1 a 5 fontes Saipos.');
@@ -56,7 +60,20 @@ export function validate(c) {
     if(t.enabled&&c.mode==='live'&&!t.sourceId) fail('Vincule a cozinha Saipos de cada destino habilitado.');
     if(typeof t.enabled!=='boolean'||typeof t.semanticsConfirmed!=='boolean') fail('Validação do destino inválida.');
     if(t.tabId!==null&&!Number.isInteger(t.tabId)) fail('Aba iFood inválida.');
-    if(!['preserve','configured'].includes(t.feeMode)) fail('Modo da taxa inválido.');
+    if(!['preserve','configured','demand'].includes(t.feeMode)) fail('Modo da taxa inválido.');
+    if(!['kitchen','waiting'].includes(t.volumeMetric))fail('Métrica de volume inválida.');
+    finite(t.maxFee,0,1000,'Teto da taxa inválido.');
+    finite(t.decreaseStepFee,0.01,1000,'Passo de redução da taxa inválido.');
+    if(!cents(t.maxFee)||!cents(t.decreaseStepFee))fail('Use até duas casas decimais em valores de taxa.');
+    if(!Array.isArray(t.volumeRules))fail('Regras de volume inválidas.');
+    let threshold=0,extraMinutes=0,extraFee=0;
+    for(const r of t.volumeRules){
+      finite(r.minOrders,1,10000,'Volume mínimo inválido.');finite(r.extraMinutes,0,1440,'Acréscimo de tempo inválido.');finite(r.extraFee,0,1000,'Acréscimo de taxa inválido.');
+      if(!Number.isInteger(r.minOrders)||!Number.isInteger(r.extraMinutes)||r.minOrders<=threshold||r.extraMinutes<extraMinutes||r.extraFee<extraFee)fail('Ordene patamares crescentes, sem reduzir tempo ou taxa ao aumentar o volume.');
+      if(!cents(r.extraFee))fail('Use até duas casas decimais no acréscimo da taxa.');
+      threshold=r.minOrders;extraMinutes=r.extraMinutes;extraFee=r.extraFee;
+    }
+    if(t.feeMode==='demand'&&!t.volumeRules.length)fail('Cadastre ao menos um patamar para taxa por demanda.');
     finite(t.maxMinutes,1,1440,'Limite de prazo inválido.');
     if(!Number.isInteger(t.maxMinutes)||!Array.isArray(t.bands)||!t.bands.length) fail('Faixas ou limite inválidos.');
     let km=0;
@@ -64,8 +81,9 @@ export function validate(c) {
       finite(b.km,0.1,100,'Raio inválido.'); finite(b.minutes,1,t.maxMinutes,'Tempo-base fora do limite.');
       if(b.km<=km||!Number.isInteger(b.minutes)) fail('Ordene os raios e use minutos inteiros.');
       km=b.km;
-      if(b.fee!==null) finite(b.fee,0,1000,'Taxa inválida.');
-      if(t.feeMode==='configured'&&b.fee===null) fail('Preencha todas as taxas no modo configurado.');
+      if(b.fee!==null){finite(b.fee,0,1000,'Taxa inválida.');if(!cents(b.fee))fail('Use até duas casas decimais na taxa-base.');}
+      if(t.feeMode!=='preserve'&&b.fee===null) fail('Preencha todas as taxas no modo configurado.');
+      if(t.feeMode==='demand'&&b.fee+(t.volumeRules.at(-1)?.extraFee||0)>t.maxFee)fail('Taxa-base mais acréscimo supera o teto desta loja.');
     }
     if(c.mode==='live'&&t.enabled&&!t.semanticsConfirmed) fail('Confirme o significado do campo Tempo antes de ativar a escrita.');
   }
@@ -118,8 +136,32 @@ export function nextOffset(desired,state,c) {
   if(lowerCount<c.decreaseReadings) return {offset:previous,lowerCount};
   return {offset:Math.max(desired,previous-c.decreaseStepMinutes),lowerCount:0};
 }
-export function plan(target,offset) {
-  const rows=target.bands.map(b=>({...b,minutes:b.minutes+offset}));
+export function plan(target,offset,feeOffset=0) {
+  const rows=target.bands.map(b=>({...b,minutes:b.minutes+offset,fee:target.feeMode==='preserve'?null:target.feeMode==='demand'?Math.round((b.fee+feeOffset)*100)/100:b.fee}));
+  if(target.feeMode==='demand'&&rows.some(b=>b.fee>target.maxFee))fail('Taxa calculada supera o teto da loja.');
   if(rows.some(b=>b.minutes>target.maxMinutes)) fail('Demanda exige prazo acima do limite configurado. Intervenção necessária; prazo mantido.');
   return rows;
+}
+
+// Todas as regras são absolutas sobre a base, nunca sobre o último valor do Portal.
+export function volumeRule(target,snapshot){
+  let volume=snapshot.count;
+  if(!Number.isInteger(volume)||volume<0)fail('Contador de volume inválido.');
+  if(target.volumeMetric==='waiting'){
+    const stages=snapshot.stages||[];
+    const kitchen=stages.filter(s=>s.stage==='Cozinha'),waiting=stages.filter(s=>s.stage==='Aguardando entrega');
+    if(kitchen.length!==1||kitchen[0].count!==volume||waiting.length!==1||!Number.isInteger(waiting[0].count)||waiting[0].count<0)fail('Contador de aguardando entrega ausente ou inconsistente.');
+    volume+=waiting[0].count;
+  }
+  const rule=[...(target.volumeRules||[])].reverse().find(r=>volume>=r.minOrders);
+  return {volume,threshold:rule?.minOrders??null,extraMinutes:rule?.extraMinutes||0,extraFee:rule?.extraFee||0};
+}
+export function adjustment(target,snapshot,state,c,now=Date.now()){
+  const productionMinutes=demand(snapshot,c,now),rule=volumeRule(target,snapshot);
+  const next=nextOffset(productionMinutes+rule.extraMinutes,state,c);
+  const fee=nextOffset(Math.round((target.feeMode==='demand'?rule.extraFee:0)*100),
+    {offset:state.feeOffsetCents,lowerCount:state.feeLowerCount},
+    {...c,decreaseStepMinutes:Math.round(target.decreaseStepFee*100)});
+  const nextState={...next,feeOffsetCents:fee.offset,feeLowerCount:fee.lowerCount};
+  return {next:nextState,rows:plan(target,next.offset,fee.offset/100),productionMinutes,...rule};
 }

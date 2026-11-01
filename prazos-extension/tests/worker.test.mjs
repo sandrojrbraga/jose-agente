@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaults} from '../extension/core.mjs';
-let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false;
+let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false,legacyIfood=false;
 const clone=x=>structuredClone(x);
 globalThis.chrome={
   storage:{local:{get:async keys=>Object.fromEntries(keys.filter(k=>k in store).map(k=>[k,clone(store[k])])),set:async patch=>Object.assign(store,clone(patch))}},
   runtime:{id:'test-extension',getURL:p=>'chrome-extension://test-extension/'+p,onMessage:{addListener:f=>listener=f},onInstalled:{addListener(){}},onStartup:{addListener(){}}},
   alarms:{create:async(...a)=>alarms.push(a),onAlarm:{addListener(){}}},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
-  scripting:{executeScript:async m=>{injections.push(m);disconnected=false;}},
+  scripting:{executeScript:async m=>{injections.push(m);disconnected=false;legacyIfood=false;}},
   tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};throw Error('missing');},query:async()=>[],reload:async()=>{},sendMessage:async(id,m)=>{
     messages.push(m);if(disconnected)throw Error('Receiving end does not exist.');
     if(m.type==='JOSE_EXECUTE'&&executionPortClosed)throw Error('The message port closed before a response was received.');
     if(m.type==='SAIPOS_READ')return {storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:true,expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:true};
-    if(m.type==='JOSE_INSPECT')return {capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:5,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
     throw Error('Unexpected message');
   }}
 };
@@ -27,7 +27,7 @@ function setup(mode='simulate'){
   // Manual simulation ignores the clock; live tests set a window containing now.
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:c.timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
   if(p==='23:59')c.schedule={days:[0,1,2,3,4,5,6],start:'23:58',end:'23:57'};
-  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;
+  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;
 }
 test('simulation reads Saipos but never sends Portal commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
@@ -43,3 +43,17 @@ test('Saipos test works while paused without enabling monitoring',async()=>{setu
 test('iFood test is inspection-only, never sends store-selection or execution commands',async()=>{setup();const r=await call({type:'TEST_IFOOD',targetId:'3148479',tabId:2});assert.equal(r.ok,true);assert.equal(r.selectedIdVerified,false);assert.deepEqual(messages.map(m=>m.type),['JOSE_INSPECT']);});
 test('reader profile cannot execute even if old settings requested live',async()=>{setup('live');store.config.profile.role='reader';await call({type:'TICK'});assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);});
 test('executor-only profile reports missing bridge instead of using other profiles magically',async()=>{setup();store.config.profile.role='executor';await call({type:'TICK'});assert.equal(messages.length,0);assert.match(store.status.message,/não conectada/);});
+
+test('fee hysteresis survives worker state and recovery; live job is pinned to profile',async()=>{
+  setup('live');const t=store.config.targets[0];Object.assign(t,{feeMode:'demand',volumeRules:[{minOrders:5,extraMinutes:0,extraFee:3}],bands:[{km:.5,minutes:19,fee:6.99}]});
+  store.states['live:3148479']={offset:0,lowerCount:0,feeOffsetCents:300,feeLowerCount:0};
+  await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,9.99);assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').target.profilePinned,true);
+  messages=[];await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,8.99);
+  executionPortClosed=true;await call({type:'TICK'});const pending=store.states['live:3148479'].pending;assert.equal(pending.feeOffsetCents,200);
+  await call({type:'REVERIFY'});assert.equal(store.states['live:3148479'].feeOffsetCents,200);
+});
+test('source failure resets fee reduction streak while preserving previous fee',async()=>{
+  setup();store.config.sources[0].storeId='999';store.states['simulate:3148479']={offset:20,lowerCount:1,feeOffsetCents:300,feeLowerCount:1};await call({type:'TICK'});assert.equal(store.states['simulate:3148479'].feeOffsetCents,300);assert.equal(store.states['simulate:3148479'].feeLowerCount,0);
+});
+
+test('legacy iFood content upgrades with inspection before a fee-writing command',async()=>{setup('live');legacyIfood=true;await call({type:'TICK'});assert.deepEqual(injections[0].files,['ifood-dom.js','ifood.js']);const types=messages.map(m=>m.type);assert.deepEqual(types,['SAIPOS_READ','JOSE_INSPECT','JOSE_INSPECT','JOSE_EXECUTE']);});
