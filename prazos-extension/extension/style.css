@@ -7,3 +7,5 @@ nav{position:sticky;top:0;background:#f3f6f5;padding:12px 0;z-index:1}nav a{padd
 .formula{padding:16px;border:1px solid #9bc4b4;border-radius:8px;background:#eef7f2;font-weight:600;line-height:1.7}#operation table{min-width:1000px}header{flex-wrap:wrap}header>div{flex:1;min-width:220px}
 
 .surge{border:2px solid #d6a447;background:#fffaf0;border-radius:12px;padding:18px;margin:24px 0}.surge h3{margin-top:0}.surge input[role=switch]{width:20px;height:20px;vertical-align:middle}
+
+.environment{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.03em;background:#e4edf7;color:#244b75;padding:6px 10px;border-radius:6px}

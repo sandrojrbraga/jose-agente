@@ -1,0 +1,21 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES} from '../extension/context.mjs';
+const area=data=>({get:async keys=>Object.fromEntries(keys.filter(k=>k in data).map(k=>[k,structuredClone(data[k])])),set:async patch=>Object.assign(data,structuredClone(patch))});
+test('private storage never reads or changes normal config, runtime state or history',async()=>{const local={config:{enabled:true},logs:[1]},session={},chrome={storage:{local:area(local),session:area(session)}};const regular=contextStore(chrome,false),privateStore=contextStore(chrome,true);assert.deepEqual(await privateStore.get(['config','logs']),{});await privateStore.set({config:{enabled:false},logs:[2],states:{x:1},tests:{ok:true}});assert.deepEqual((await regular.get(['config','logs'])),local);assert.equal(session['jose:incognito:config'].enabled,false);await regular.set({config:{enabled:true,store:'normal'}});assert.deepEqual((await privateStore.get(['config'])).config,{enabled:false});});
+test('private context does not fall back to persistent storage if session unavailable',()=>{assert.throws(()=>contextStore({storage:{local:area({})}},true),/indisponível/);});
+function fixture({currentPrivate=false,includePrivateWindow=true,tabs=[]}={}){
+ const created=[],windows=[{id:10,incognito:false},...(includePrivateWindow?[{id:20,incognito:true}]:[])];let next=100;
+ const chrome={windows:{get:async id=>windows.find(w=>w.id===id),getLastFocused:async()=>windows.find(w=>w.incognito===currentPrivate),getAll:async()=>windows,create:async data=>{created.push({window:data});return {id:30,incognito:data.incognito};}},tabs:{query:async()=>tabs,get:async id=>tabs.find(t=>t.id===id),create:async data=>{created.push({tab:data});const tab={...data,id:next++,incognito:windows.find(w=>w.id===data.windowId)?.incognito};tabs.push(tab);return tab;}}};
+ return {chrome,created,tabs};
+}
+test('tab discovery and direct access reject the opposite browsing environment',async()=>{const {chrome}=fixture({tabs:[{id:1,incognito:false},{id:2,incognito:true}]});assert.deepEqual((await contextTabs(chrome,true)({})).map(t=>t.id),[2]);await assert.rejects(ownedTab(chrome,1,true),/outro ambiente/);assert.equal((await ownedTab(chrome,2,true)).id,2);});
+test('one click opens both login pages only in anonymous window even when normal window focused',async()=>{const {chrome,created}=fixture();const r=await openContextPages(chrome,true,LOGIN_PAGES);assert.equal(r.created,2);assert.deepEqual(created.map(x=>x.tab.url),LOGIN_PAGES);assert.ok(created.every(x=>x.tab.windowId===20));});
+test('opening login pages twice reuses existing private tabs without duplicates',async()=>{const f=fixture();await openContextPages(f.chrome,true,LOGIN_PAGES);const r=await openContextPages(f.chrome,true,LOGIN_PAGES);assert.equal(r.created,0);assert.equal(r.reused,2);assert.equal(f.created.length,2);});
+test('normal login tabs never satisfy private opener; absence creates an explicit private window',async()=>{const f=fixture({includePrivateWindow:false,tabs:[{id:1,url:LOGIN_PAGES[0],incognito:false}]});await openContextPages(f.chrome,true,LOGIN_PAGES);assert.deepEqual(f.created[0].window,{incognito:true,url:LOGIN_PAGES});});
+test('foreign sender window and duplicates fail before opening pages',async()=>{const f=fixture();await assert.rejects(openContextPages(f.chrome,true,LOGIN_PAGES,{tab:{windowId:10}}),/ambiente correto/);f.tabs.push({id:1,incognito:true,url:LOGIN_PAGES[1]},{id:2,incognito:true,url:LOGIN_PAGES[1]});await assert.rejects(openContextPages(f.chrome,true,LOGIN_PAGES),/duplicadas/);assert.equal(f.created.length,0);});
+
+test('dashboard opener reuses and focuses the private dashboard in its own window',async()=>{
+ const f=fixture({tabs:[{id:9,windowId:20,incognito:true,url:'chrome-extension://jose/options.html'}]}),updates=[];
+ f.chrome.tabs.update=async(id,props)=>updates.push({tab:id,props});f.chrome.windows.update=async(id,props)=>updates.push({window:id,props});
+ const r=await openContextPages(f.chrome,true,['chrome-extension://jose/options.html'],{},true);assert.equal(r.reused,1);assert.deepEqual(updates,[{tab:9,props:{active:true}},{window:20,props:{focused:true}}]);
+});

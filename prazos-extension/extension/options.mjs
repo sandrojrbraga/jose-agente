@@ -105,6 +105,7 @@ function showTests(tests){
   }
 }
 function renderOverview(d){
+  $('environment').textContent=d.context==='incognito'?'AMBIENTE ANÔNIMO · configuração temporária e separada':'AMBIENTE NORMAL · configuração persistente';
   const saved=d.config,target=saved.targets.find(t=>t.id===saved.profile.targetId),source=saved.sources.find(s=>s.id===target?.sourceId),now=Date.now();
   $('profileStore').textContent=target?.name||'Loja não cadastrada';
   const result=d.status.results?.find(r=>r.id===target?.id);
@@ -186,4 +187,9 @@ $('linkAccounts').onclick=()=>action(async()=>{
     for(const t of config.targets){const linked=r.config.targets.find(x=>x.id===t.id);if(linked){t.tabId=linked.tabId;t.enabled=linked.enabled;}}
     config.enabled=false;config.mode='simulate';$('enabled').checked=false;$('mode').value='simulate';tabs=await call({type:'TABS'});draw();await refresh();message('Saipos e iFood vinculados e conferidos. Monitoramento pausado. Parâmetros em edição foram mantidos; revise e salve.');
   }finally{$('linkAccounts').disabled=false;}
+});
+
+$('openBoth').onclick=()=>action(async()=>{
+  $('openBoth').disabled=true;
+  try{const r=await call({type:'OPEN_BOTH'});if(r.error)throw Error(r.error);tabs=await call({type:'TABS'});draw();message(`${r.created} página(s) aberta(s), ${r.reused} já aberta(s). Faça login nas duas plataformas e depois clique Vincular Saipos + iFood.`);}finally{$('openBoth').disabled=false;}
 });

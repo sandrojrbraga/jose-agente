@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.8.0
+# José — Tempo e taxa Saipos/iFood · v0.9.0
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -8,7 +8,7 @@ Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consu
 
 Escolher a loja em “Loja exclusiva deste perfil Chrome”. Apenas essa loja pode estar habilitada. Antes de importar, executar ou revalidar, o leitor confere o nome da loja atualmente aberta; se divergir, bloqueia antes de abrir o seletor ou preencher campos. Na execução, confirma também o ID no seletor do Portal, selecionando o mesmo cadastro. O diagnóstico somente de leitura confere o nome e informa o ID **esperado**, pois o cabeçalho não expõe diretamente o ID selecionado.
 
-O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel leitor só simula; o papel executor isolado só permite testes, pois a ponte entre perfis não está implementada. Cada perfil guarda configuração e histórico próprios. Não há painel central entre perfis nesta versão.
+O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel leitor só simula; o papel executor isolado só permite testes, pois a ponte entre perfis não está implementada. Cada perfil guarda configuração e histórico próprios, com separação adicional entre ambiente normal e anônimo. Não há painel central entre perfis nesta versão.
 
 ## Instalação e atualização
 
@@ -127,10 +127,28 @@ npm test
 npm run check
 ```
 
-87 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+98 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
 Com as duas sessões já logadas no mesmo perfil, escolher a loja e clicar **Vincular Saipos + iFood**, no topo. O botão identifica a cozinha pelo ID, confere a loja iFood pelo nome e associa as duas abas, de forma atômica, deixando o monitor pausado/em simulação. Não inicia login, não cria conta, não troca a unidade iFood e não altera prazos ou taxas. O diagnóstico informa ID iFood esperado, não um ID diretamente lido do cabeçalho.
 
 Deixar apenas uma aba da cozinha Saipos e uma aba iFood na tela de entrega. Duplicidade, ausência, loja diferente e envio pendente impedem a vinculação; não deixa apenas metade do vínculo salva. Cozinha nova precisa ser cadastrada e salva antes. Os valores do formulário em edição são mantidos e só entram na operação após Salvar cadastro e parâmetros.
+
+## Modo anônimo e botão único de login · 0.9
+
+Manifest configurado com incognito: split. A extensão identifica o ambiente com chrome.extension.inIncognitoContext. O painel e o popup mostram NORMAL ou ANÔNIMO. A página do painel é aberta explicitamente em uma janela do mesmo ambiente do popup.
+
+Atualizar os arquivos, recarregar o José em chrome://extensions, abrir Detalhes e ativar **Permitir em modo anônimo**. O código não habilita essa permissão por conta própria. Abrir uma janela anônima e acessar o painel pelo ícone José.
+
+Na primeira tela, **Abrir Saipos + iFood · Login**, ao lado de Vincular, abre as duas páginas no ambiente do painel. Havendo uma aba de cada site já aberta, reaproveita, sem duplicar. Se houver várias abas do mesmo site, informa que é preciso resolver a duplicidade. Quando não houver janela do ambiente solicitado, cria uma janela explicitamente normal ou anônima. Não preenche credenciais, não autentica e não muda a loja. Depois dos logins manuais, usar **Vincular Saipos + iFood**.
+
+### Dados e execução separados
+
+- Normal: mantém os dados existentes em chrome.storage.local. Na atualização, o monitor é pausado para conferência.
+- Anônimo: usa chrome.storage.session, em memória, com chaves exclusivas jose:incognito:. Começa com cadastro padrão, monitor pausado e taxa de pico desligada, sem importar dados normais automaticamente. Os dados temporários são apagados ao reiniciar o navegador ou desativar/recarregar/atualizar a extensão. Não há promessa de persistência após encerrar o Chrome. Exportar a configuração manualmente se quiser reutilizá-la, depois importar e vincular novamente.
+- Configuração, vínculos, estado de execução, testes, resultados, logs e histórico de alterações usam o armazenamento correspondente ao ambiente. O código não faz fallback do anônimo para armazenamento persistente.
+- Todas as buscas filtram o ambiente; acesso direto a aba de outro ambiente é bloqueado, inclusive antes de recarregar ou enviar comandos. Os alarmes têm nomes separados. Pausar e salvar valem apenas para o ambiente do painel.
+- O armazenamento em memória não é purgado só porque a última janela anônima fechou; pode permanecer enquanto a extensão estiver carregada nessa sessão do navegador. Ao reabrir, verificar vínculos e manter pausado até conferir os logins.
+
+O suporte anônimo não cria uma sessão por janela: janelas anônimas do mesmo perfil continuam compartilhando os logins dos sites. Isso não substitui o isolamento por perfis quando são necessárias várias lojas independentes. Instalação real e login anônimo ainda precisam ser homologados; os testes utilizam APIs/DOM simulados, sem alterar prazos ou taxas reais.
