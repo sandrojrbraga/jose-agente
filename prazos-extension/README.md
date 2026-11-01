@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.5
+# José — Tempo e taxa Saipos/iFood · v0.9.6
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -201,3 +201,12 @@ A leitura agora verifica se a aba vinculada ainda existe e está na tela de entr
 Exportar diagnóstico agora inclui versão, ambiente, ativação/modo efetivamente salvos, parâmetros da loja escolhida, faixas, estado do último ciclo, leitura resumida da fonte, existência de envio pendente e últimos 20 registros da loja, além dos testes de conexão. Não inclui credenciais nem copia os cartões brutos da última leitura para o relatório. Isso permite identificar bloqueios de execução sem confundir teste de conexão com estado de monitoramento.
 
 Após atualizar, abrir Entrega da loja correta no mesmo ambiente e iniciar o monitoramento no horário configurado. Uma única aba válida pode ser reconectada automaticamente. A instalação real e o salvamento iFood continuam pendentes de homologação; os testes não alteraram prazos/taxas reais.
+
+
+## Correção 0.9.6 — revalidar envio após fechar a aba
+
+A revalidação usava o ID histórico da aba do comando pendente, mesmo quando a leitura já havia reconectado outra aba. Agora usa o vínculo atual da mesma loja ou recupera uma única aba Entrega do mesmo ambiente, confere o nome original do comando, tabela e ausência de alterações não salvas. Recarrega essa aba e verifica os valores persistidos, sem reenviar JOSE_EXECUTE, preencher campos ou trocar loja.
+
+Loja diferente, outro ambiente, abas ambíguas, formulário não salvo e valores divergentes mantêm a pendência. A configuração continua bloqueada para edição enquanto houver resultado incerto. Uma resposta incerta que inclui valores esperados passa a preservá-los antes de tratar o erro. Sucesso de revalidação é registrado no histórico; o próximo ciclo atualiza o cartão de operação.
+
+Para atualizar uma instalação existente, recarregar a mesma extensão sem removê-la, preservando os dados normais. Atualizações pausam o monitoramento. Abrir Entrega da mesma loja, revalidar a pendência e só então iniciar monitoramento novamente. No ambiente anônimo, dados temporários podem ser perdidos ao recarregar a extensão. Testes simulados não substituem a validação do salvamento no Portal real.

@@ -116,6 +116,7 @@ async function tick(manual=false){
         states[key]={...st,pending:{job,...next}};
         await storage.set({states});
         const r=await send(t.tabId,job);
+        if(r.expected){states[key].pending.expected=r.expected;await storage.set({states});}
         if(!r.ok){if(!r.uncertain){delete states[key].pending;await storage.set({states});}throw Error(r.error||'Envio não confirmado.');}
         states[key].pending.expected=r.expected;
         await storage.set({states});
@@ -258,9 +259,20 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         for(const [key,s] of Object.entries(d.states))if(s.pending){
           const p=s.pending;
           const expected=p.expected||p.job.rows.map(b=>({...b,fee:p.job.target.feeMode==='preserve'?null:b.fee}));
-          const check=await send(p.job.target.tabId,{type:'JOSE_VERIFY',target:{...p.job.target,profilePinned:true},expected});
+          const saved=d.config.targets.find(t=>t.id===p.job.target.id);
+          if(!saved||d.config.profile.targetId!==p.job.target.id)throw Error('O envio pendente pertence a outra loja. Nenhuma revalidação foi realizada.');
+          // O comando preserva sua identidade e valores originais; apenas o vínculo da aba pode mudar.
+          const resolved=await resolvePortalTab(chrome,incognito,{...p.job.target,tabId:saved.tabId});
+          const target={...p.job.target,tabId:resolved.tab.id,profilePinned:true};
+          auditIfood(await send(target.tabId,{type:'JOSE_INSPECT'}),target,null,d.config);
+          if(saved.tabId!==target.tabId)await bind('targets',target.id,target.tabId);
+          p.job.target=target;await storage.set({states:d.states});
+          // Recarregar e reler distingue valores persistidos de um simples preenchimento na tela.
+          const check=await verifyReload(target,expected);
           if(!check.ok)throw Error(check.error||'Valores ainda não conferem. Não houve reenvio.');
-          d.states[key]={offset:p.offset,lowerCount:p.lowerCount,feeOffsetCents:p.feeOffsetCents,feeLowerCount:p.feeLowerCount};count++;
+          d.states[key]={offset:p.offset,lowerCount:p.lowerCount,feeOffsetCents:p.feeOffsetCents,feeLowerCount:p.feeLowerCount};
+          await storage.set({states:d.states});
+          await log({storeId:target.id,type:'revalidated',jobId:p.job.id,tabId:target.tabId,after:expected});count++;
         }
         await storage.set({states:d.states});return {ok:true,count};
       }finally{running=false;}

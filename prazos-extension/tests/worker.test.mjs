@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaults} from '../extension/core.mjs';
+let verificationOk=true,portalUnsaved=false,reloaded=[],destinations=[];
 let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false,legacyIfood=false,inventory=[],changedWrite=false;
 const clone=x=>structuredClone(x);
 globalThis.chrome={
@@ -9,13 +10,14 @@ globalThis.chrome={
   alarms:{create:async(...a)=>alarms.push(a),onAlarm:{addListener(){}}},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
   scripting:{executeScript:async m=>{injections.push(m);disconnected=false;legacyIfood=false;}},
-  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};const found=inventory.find(t=>t.id===id);if(found)return {...found,status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async()=>{},sendMessage:async(id,m)=>{
+  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};const found=inventory.find(t=>t.id===id);if(found)return {...found,status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async id=>{reloaded.push(id);},sendMessage:async(id,m)=>{
+    destinations.push({id,type:m.type});
     messages.push(m);if(disconnected)throw Error('Receiving end does not exist.');
     if(m.type==='JOSE_EXECUTE'&&executionPortClosed)throw Error('The message port closed before a response was received.');
     if(m.type==='SAIPOS_READ')return {readerVersion:4,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
-    if(m.type==='JOSE_VERIFY')return {ok:true};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:7,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
+    if(m.type==='JOSE_VERIFY')return {ok:verificationOk};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:7,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
     throw Error('Unexpected message');
   }}
 };
@@ -27,7 +29,7 @@ function setup(mode='simulate'){
   // Manual simulation ignores the clock; live tests set a window containing now.
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:c.timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
   if(p==='23:59')c.schedule={days:[0,1,2,3,4,5,6],start:'23:58',end:'23:57'};
-  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;inventory=[];changedWrite=false;
+  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;inventory=[];changedWrite=false;verificationOk=true;portalUnsaved=false;reloaded=[];destinations=[];
 }
 test('simulation reads both platforms but never sends write commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ','JOSE_INSPECT']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
@@ -101,4 +103,35 @@ test('closed Portal ID is replaced after validating current store, without pausi
 });
 test('wrong store cannot be persisted as recovered Portal binding',async()=>{
  setup();store.config.targets[0].tabId=999;store.config.targets[0].name='Pizza Pizza - Parangaba';inventory=[{id:7,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,false);assert.match(r.error,/Loja diferente/);assert.equal(store.config.targets[0].tabId,999);
+});
+
+function pendingAt(tabId=999){
+ const target={...structuredClone(store.config.targets[0]),tabId};
+ store.states['live:3148479']={pending:{job:{id:'uncertain-job',target,rows:[{km:.5,minutes:22,fee:6.99}]},offset:2,lowerCount:0}};
+}
+test('revalidation uses current saved tab instead of closed job tab and never resends',async()=>{
+ setup('live');pendingAt();const r=await call({type:'REVERIFY'});
+ assert.equal(r.count,1);assert.deepEqual(reloaded,[2]);assert.ok(destinations.every(x=>x.id===2));
+ assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);assert.equal(store.states['live:3148479'].pending,undefined);
+ assert.equal(store.logs[0].type,'revalidated');
+});
+test('revalidation recovers unique replacement when both saved and job tabs closed',async()=>{
+ setup('live');store.config.targets[0].tabId=999;pendingAt();inventory=[{id:7,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
+ const r=await call({type:'REVERIFY'});assert.equal(r.count,1);assert.deepEqual(reloaded,[7]);assert.equal(store.config.targets[0].tabId,7);
+ assert.ok(messages.every(m=>['JOSE_INSPECT','JOSE_VERIFY'].includes(m.type)));
+});
+test('wrong-store replacement does not release pending operation or reload',async()=>{
+ setup('live');pendingAt();store.states['live:3148479'].pending.job.target.name='Pizza Pizza - Parangaba';
+ const r=await call({type:'REVERIFY'});assert.match(r.error,/Loja diferente/);assert.ok(store.states['live:3148479'].pending);assert.deepEqual(reloaded,[]);
+});
+test('ambiguous replacement and opposite-context binding preserve pending without effects',async()=>{
+ setup('live');store.config.targets[0].tabId=999;pendingAt();inventory=[7,8].map(id=>({id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}));
+ let r=await call({type:'REVERIFY'});assert.match(r.error,/mais de uma/);assert.ok(store.states['live:3148479'].pending);assert.equal(messages.length,0);
+ store.config.targets[0].tabId=7;inventory[0].incognito=true;r=await call({type:'REVERIFY'});assert.match(r.error,/outro ambiente/);assert.deepEqual(reloaded,[]);
+});
+test('unsaved Portal form is never discarded during pending revalidation',async()=>{
+ setup('live');pendingAt();portalUnsaved=true;const r=await call({type:'REVERIFY'});assert.match(r.error,/não salvas/);assert.ok(store.states['live:3148479'].pending);assert.deepEqual(reloaded,[]);
+});
+test('persisted values that differ retain pending job, with no repeated execution',async()=>{
+ setup('live');pendingAt();verificationOk=false;const r=await call({type:'REVERIFY'});assert.match(r.error,/não conferem/);assert.ok(store.states['live:3148479'].pending);assert.deepEqual(reloaded,[2]);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
 });
