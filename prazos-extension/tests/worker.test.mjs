@@ -45,7 +45,7 @@ test('reader profile cannot execute even if old settings requested live',async()
 test('executor-only profile reports missing bridge instead of using other profiles magically',async()=>{setup();store.config.profile.role='executor';await call({type:'TICK'});assert.equal(messages.length,0);assert.match(store.status.message,/não conectada/);});
 
 test('fee hysteresis survives worker state and recovery; live job is pinned to profile',async()=>{
-  setup('live');const t=store.config.targets[0];Object.assign(t,{feeMode:'demand',volumeRules:[{minOrders:5,extraMinutes:0,extraFee:3}],bands:[{km:.5,minutes:19,distanceMinutes:4,fee:6.99}]});
+  setup('live');const t=store.config.targets[0];Object.assign(t,{feeMode:'demand',feeRules:[{minOrders:5,extraFee:3}],volumeRules:[{minOrders:5,extraMinutes:0,extraFee:3}],bands:[{km:.5,minutes:19,distanceMinutes:4,fee:6.99}]});
   store.states['live:3148479']={offset:0,lowerCount:0,feeOffsetCents:300,feeLowerCount:0};
   await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,9.99);assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').target.profilePinned,true);
   messages=[];await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,8.99);

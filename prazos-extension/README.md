@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.7.0
+# José — Tempo e taxa Saipos/iFood · v0.8.0
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -14,7 +14,7 @@ O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel
 
 1. Extrair o ZIP do projeto. A pasta para carregar é `prazos-extension/extension`, que contém manifest.json.
 2. Em chrome://extensions, ativar modo desenvolvedor e carregar sem compactação. Se já instalado, substituir os arquivos da pasta instalada e clicar **Recarregar**. Não manter duas versões ativas. Carregar outra pasta pode criar outro ID e outro armazenamento.
-3. Recarregar Saipos e iFood, fechar a configuração antiga e abrir o painel pelo ícone José. A atualização de configurações anteriores preserva bases e patamares personalizados, adiciona os novos campos e pausa em simulação. O antigo modo combinado é substituído por Pedido mais antigo, com execução pausada para revisão. Patamares, taxas e bases de entrega são preservados; revisar a regra antes de salvar. As bases por km viram média comum + adicional por distância, sem alterar os valores-base efetivos. Maraponga é a loja inicial quando não há escolha de perfil anterior.
+3. Recarregar Saipos e iFood, fechar a configuração antiga e abrir o painel pelo ícone José. A atualização preserva bases e parâmetros, separa patamares de taxa dos de tempo, desativa o pico e pausa em simulação. Na atualização da 0.7 para 0.8, entrega média e adicionais de distância editados são preservados exatamente. O antigo modo combinado é substituído por Pedido mais antigo, com execução pausada para revisão. Patamares, taxas e bases de entrega são preservados; revisar a regra antes de salvar. As bases por km viram média comum + adicional por distância, sem alterar os valores-base efetivos. Maraponga é a loja inicial quando não há escolha de perfil anterior.
 4. Escolher a loja do perfil e vincular a cozinha e as duas abas. P8 já tem ID Saipos 65416, ligado a Maraponga/Jardim Cearense/Parangaba. As demais cozinhas aguardam os IDs corretos.
 5. Executar os dois testes de leitura antes de ativar. Falhas podem ser exportadas em **Exportar diagnóstico**.
 
@@ -23,9 +23,9 @@ O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel
 O painel mostra apenas a loja escolhida para o perfil, com tabelas editáveis:
 
 - **Faixas por km:** limite superior da faixa, adicional de distância em minutos e taxa-base em reais. O adicional se soma à média de entrega informada, sem duplicar uma base completa. Cadastrar todas as faixas existentes na mesma ordem do Portal. Para 7–10 km, usar 10. Não cria nem remove faixas no iFood.
-- **Patamares de volume:** “a partir de X pedidos”, acréscimo de minutos e acréscimo de taxa. Os limites X não foram definidos pelo usuário e começam vazios. Adicionar linhas não ativa a execução; revisar e salvar.
+- **Patamares de preparo:** “a partir de X pedidos”, minutos de preparo. São independentes dos patamares de taxa de pico. Os limites X não foram definidos pelo usuário e começam vazios. Adicionar linhas não ativa a execução; revisar e salvar.
 - **Métrica de volume:** Cozinha, ou Cozinha + Aguardando entrega. Inclui todos os canais da cozinha, inclusive balcão. Pedidos que já saíram para entrega não entram nesses patamares. Em cozinha compartilhada, a fila inteira alimenta cada loja vinculada, e cada loja aplica suas próprias regras.
-- **Taxas:** preservar a existente (padrão), usar taxa-base fixa, ou taxa-base + acréscimo por volume. O modo por demanda exige taxa-base em todas as faixas e pelo menos um patamar.
+- **Taxa de pico opcional:** chave própria para ativar/desativar, com patamares exclusivos de pedidos em Cozinha → acréscimo em R$. A taxa normal pode ser preservada ou mantida na base cadastrada. O pico exige taxa-base em todas as faixas e pelo menos um patamar com acréscimo positivo.
 - **Tetos e retorno:** prazo máximo, taxa máxima e redução da taxa por etapa. O teto de taxa inicial de R$30 e o teto de prazo de 120 min são propostas editáveis, não parâmetros aprovados para a operação. Se a configuração exceder o teto, é rejeitada, sem cortar artificialmente valores.
 
 O patamar mais alto atingido determina os acréscimos. Os patamares **não se somam**:
@@ -51,11 +51,25 @@ O próximo envio aproxima o tempo realmente lido no iFood da meta em **até X mi
 
 No modo por quantidade, definir pelo menos um patamar com minutos positivos. Abaixo do primeiro, o preparo por quantidade é zero. O tempo médio de entrega é informado manualmente, não inferido do histórico de rotas.
 
-`Taxa por demanda = taxa-base da faixa + acréscimo do patamar`
+## Taxa de pico · opcional para demanda extrema
+
+Em Parâmetros, usar a seção separada **Taxa de pico**. A chave **Ativar aumento automático da taxa por volume em Cozinha** começa desativada. Não depende do modo ou da fila escolhidos para o ajuste de tempo.
+
+Cadastrar patamares próprios de **X pedidos em Cozinha → acrescentar R$ Y**, com X e Y editáveis por loja. Conta somente Cozinha, incluindo todos os canais; não soma Aguardando entrega. O maior patamar atingido define o acréscimo total em reais, aplicado sobre a taxa-base de cada faixa de km.
+
+`Taxa de pico = taxa-base da faixa + acréscimo do patamar de taxa`
+
+Ativar a chave e salvar habilita o comportamento nos ciclos de execução autorizados; não altera o Portal no modo simulado/pausado. O tempo continua funcionando independentemente. A subida do acréscimo é imediata no próximo ciclo válido; a descida por queda da fila exige leituras consecutivas e reduz em passos configurados até a base. Não acumula sobre o último valor salvo.
+
+Desativar a chave e salvar seleciona a taxa-base cadastrada, restaurada no próximo ciclo de execução válido. Se o monitor estiver pausado, fora do horário ou em simulação, os valores reais permanecem até a execução. Para não mexer em taxas, o modo normal Preservar taxa do Portal mantém o valor existente; escolhê-lo explicitamente não restaura uma base.
+
+A atualização não habilita a taxa de pico automaticamente. Os patamares monetários antigos são copiados para a tabela independente, quando disponíveis, para revisão. O painel Operação indica ATIVADA/DESATIVADA, volume de Cozinha e acréscimo calculado. Nenhuma venda é pausada por esta função.
+
+
 
 Exemplo apenas ilustrativo, não pré-configurado: base R$6,99; patamar de 10 pedidos acrescenta R$1; patamar de 20 acrescenta R$2. Com 20 pedidos, a taxa é R$8,99. Não vira R$9,99 e não cresce novamente a cada ciclo. O mesmo acréscimo em reais é aplicado às taxas-base das faixas da loja.
 
-Aumentos avançam no ciclo válido, limitados ao passo máximo por faixa. Reduções precisam de duas ou mais leituras consecutivas, com passos independentes para tempo e taxa, até voltar exatamente à base. A leitura inválida mantém o último ajuste confirmado e reinicia as contagens de redução. Valores não acumulam sobre o preço/prazo atual do Portal. O monitor não pausa a loja.
+Aumentos de tempo avançam no ciclo válido, limitados ao passo máximo por faixa; o acréscimo de taxa sobe para o patamar atingido. Reduções precisam de duas ou mais leituras consecutivas, com passos independentes para tempo e taxa, até voltar exatamente à base. A leitura inválida mantém o último ajuste confirmado e reinicia as contagens de redução. Valores não acumulam sobre o preço/prazo atual do Portal. O monitor não pausa a loja.
 
 **Confirmar a semântica de “Tempo” antes de habilitar a escrita:** o cálculo escolhido pressupõe prazo total, sem duplicar um preparo já somado por outro mecanismo. A idade não é multiplicada pela quantidade de pizzas. O tempo usado é o decorrido desde a entrada em Cozinha, e não o pedido mais recente. “Ler faixas atuais do Portal” importa o que está exibido; se já houver reajuste, corrigir a base antes de salvar.
 
@@ -113,7 +127,7 @@ npm test
 npm run check
 ```
 
-81 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+87 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 

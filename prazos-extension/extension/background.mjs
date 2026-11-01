@@ -95,7 +95,7 @@ async function tick(manual=false){
         const calc=adjustment(t,source,st,c),{next,rows:adjustmentRows,productionMinutes:desired}=calc;
         const desiredRows=plan(t,calc.desiredTime,next.feeOffsetCents/100);
         const rows=portal?.ok?stepRows(adjustmentRows,portal.rows,t.adjustStepMinutes,desiredRows):adjustmentRows;
-        const breakdown={mode:t.timeMode,scope:t.volumeMetric,volume:calc.volume,oldestMinutes:desired,preparationMinutes:next.offset,desiredPreparationMinutes:calc.desiredTime,deliveryAverage:t.averageDeliveryMinutes,step:t.adjustStepMinutes};
+        const breakdown={mode:t.timeMode,scope:t.volumeMetric,volume:calc.volume,oldestMinutes:desired,preparationMinutes:next.offset,desiredPreparationMinutes:calc.desiredTime,deliveryAverage:t.averageDeliveryMinutes,step:t.adjustStepMinutes,feeEnabled:t.feeMode==='demand',feeVolume:calc.feeVolume,feeThreshold:calc.feeThreshold,feeExtra:next.feeOffsetCents/100};
         if(c.mode==='simulate'){
           // Simulação não muda o Portal nem o estado de execução real.
           states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,breakdown,desiredRows,rows});continue;

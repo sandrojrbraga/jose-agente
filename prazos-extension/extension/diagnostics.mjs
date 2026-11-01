@@ -1,4 +1,4 @@
-import {demand,volumeRule,deliveryMinutes,timeContribution,selectedAge} from './core.mjs';
+import {demand,volumeRule,deliveryMinutes,timeContribution,selectedAge,feeRule} from './core.mjs';
 export const norm=s=>String(s||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
 export function auditSaipos(snapshot,source,config,now=Date.now()){
   if(snapshot?.error)throw Error(snapshot.error);
@@ -26,6 +26,6 @@ export function auditIfood(snapshot,target,sourceTest,config,now=Date.now()){
     productionMinutes,rows:snapshot.rows.map(r=>{
       const base=target.bands.find(b=>b.km===r.km);
       const proposed=base&&productionMinutes!==null?deliveryMinutes(target,base)+timeContribution(target,productionMinutes,rule):null;
-      return {...r,proposedFee:target.feeMode==='preserve'?r.fee:base?.fee==null?null:target.feeMode==='demand'?(rule?Math.round((base.fee+rule.extraFee)*100)/100:null):base.fee,baseMinutes:base?deliveryMinutes(target,base):null,proposedMinutes:proposed,difference:proposed===null?null:r.minutes-proposed};
+      return {...r,proposedFee:target.feeMode==='preserve'?r.fee:base?.fee==null?null:target.feeMode==='demand'?(rule?Math.round((base.fee+feeRule(target,sourceTest).extraFee)*100)/100:null):base.fee,baseMinutes:base?deliveryMinutes(target,base):null,proposedMinutes:proposed,difference:proposed===null?null:r.minutes-proposed};
     }),note:'Comparação com parâmetros salvos; previsão imediata, sem considerar a redução gradual do monitor. Divergência não prova erro: confirme a tabela-base e o significado do campo Tempo. Nenhum valor foi alterado.'};
 }

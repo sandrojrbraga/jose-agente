@@ -25,4 +25,5 @@ test('dashboard boots, reads iFood without enabling writes, and preserves unsave
   assert.equal(nodes.registration.children.length,1);assert.ok(nodes.targets.children.length>0);
   buttons[1].onclick();assert.equal(nodes.setup.hidden,false);assert.equal(nodes.operation.hidden,true);assert.equal(nodes.parameters.hidden,true);
   nodes.profileLabel.value='Edição não salva';await nodes.readIfood.onclick();assert.equal(nodes.profileLabel.value,'Edição não salva');assert.equal(nodes.monitorState.textContent,'Pausado');
+  const walk=node=>[node,...node.children.flatMap(walk)],toggle=walk(nodes.targets).find(n=>n.attributes?.role==='switch');assert.ok(toggle);assert.equal(toggle.checked,false);toggle.checked=true;toggle.onchange();const changed=walk(nodes.targets).find(n=>n.attributes?.role==='switch');assert.equal(changed.checked,true);assert.equal(changed.attributes['aria-checked'],'true');assert.equal(messages.some(m=>m.type==='SAVE'),false);
 });

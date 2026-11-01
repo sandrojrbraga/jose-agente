@@ -1,4 +1,4 @@
-export const VERSION = 6;
+export const VERSION = 7;
 export const STORE_CATALOG = [
  ['3469536','Pizza Pizza Aquiraz'],
  ['3450370','Pizza Pizza - Jardim Cearense','p8'],
@@ -18,18 +18,19 @@ export const defaults = () => ({
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
   targets: STORE_CATALOG.map(([id,name,sourceId])=>({id,name,sourceId:sourceId||'',
-    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',timeMode:'oldest',deliveryMode:'distance',averageDeliveryMinutes:15,adjustStepMinutes:5,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
+    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',feeRules:[],timeMode:'oldest',deliveryMode:'distance',averageDeliveryMinutes:15,adjustStepMinutes:5,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
     bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,distanceMinutes:(km/.5-1)*5,fee:null}))}))
 });
 export function migrate(old){
   if(!old)return defaults();
   if(old.version===VERSION)return old;
+  if(old.version===6){const c=structuredClone(old);c.version=VERSION;c.enabled=false;c.mode='simulate';for(const t of c.targets){t.semanticsConfirmed=false;t.feeRules=t.feeRules||(t.volumeRules||[]).filter(r=>r.extraFee>0).map(r=>({minOrders:r.minOrders,extraFee:r.extraFee}));if(t.feeMode==='demand')t.feeMode=t.bands.every(b=>b.fee!==null)?'configured':'preserve';}return c;}
   if(![1,2,3,4,5].includes(old.version))throw Error('Versão de configuração desconhecida.');
   const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
   const fresh=defaults().targets;
   c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
   c.profile={...defaults().profile,...old.profile,targetId:old.profile?.targetId||'3148479'};
-  c.targets.forEach(t=>{t.id=String(t.id);const previous=old.targets?.find(o=>String(o.id)===t.id);t.timeMode=previous?.timeMode==='volume'?'volume':'oldest';const base=previous?.deliveryMode==='average'?previous.averageDeliveryMinutes:Math.min(...t.bands.map(b=>b.minutes));t.averageDeliveryMinutes=base;t.bands=t.bands.map(b=>({...b,distanceMinutes:previous?.deliveryMode==='average'?0:b.minutes-base}));t.deliveryMode='distance';t.adjustStepMinutes=previous?.adjustStepMinutes||5;t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
+  c.targets.forEach(t=>{t.id=String(t.id);const previous=old.targets?.find(o=>String(o.id)===t.id);t.timeMode=previous?.timeMode==='volume'?'volume':'oldest';const base=previous?.deliveryMode==='average'?previous.averageDeliveryMinutes:Math.min(...t.bands.map(b=>b.minutes));t.averageDeliveryMinutes=base;t.bands=t.bands.map(b=>({...b,distanceMinutes:previous?.deliveryMode==='average'?0:b.minutes-base}));t.deliveryMode='distance';t.adjustStepMinutes=previous?.adjustStepMinutes||5;t.feeRules=previous?.feeRules||(previous?.volumeRules||[]).filter(r=>r.extraFee>0).map(r=>({minOrders:r.minOrders,extraFee:r.extraFee}));if(t.feeMode==='demand')t.feeMode=t.bands.every(b=>b.fee!==null)?'configured':'preserve';t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
   return c;
 }
 
@@ -70,15 +71,17 @@ export function validate(c) {
     finite(t.decreaseStepFee,0.01,1000,'Passo de redução da taxa inválido.');
     if(!cents(t.maxFee)||!cents(t.decreaseStepFee))fail('Use até duas casas decimais em valores de taxa.');
     if(!Array.isArray(t.volumeRules))fail('Regras de volume inválidas.');
-    let threshold=0,extraMinutes=0,extraFee=0;
+    let threshold=0,extraMinutes=0;
     for(const r of t.volumeRules){
-      finite(r.minOrders,1,10000,'Volume mínimo inválido.');finite(r.extraMinutes,0,1440,'Acréscimo de tempo inválido.');finite(r.extraFee,0,1000,'Acréscimo de taxa inválido.');
-      if(!Number.isInteger(r.minOrders)||!Number.isInteger(r.extraMinutes)||r.minOrders<=threshold||r.extraMinutes<extraMinutes||r.extraFee<extraFee)fail('Ordene patamares crescentes, sem reduzir tempo ou taxa ao aumentar o volume.');
-      if(!cents(r.extraFee))fail('Use até duas casas decimais no acréscimo da taxa.');
-      threshold=r.minOrders;extraMinutes=r.extraMinutes;extraFee=r.extraFee;
+      finite(r.minOrders,1,10000,'Volume mínimo inválido.');finite(r.extraMinutes,0,1440,'Acréscimo de tempo inválido.');
+      if(!Number.isInteger(r.minOrders)||!Number.isInteger(r.extraMinutes)||r.minOrders<=threshold||r.extraMinutes<extraMinutes)fail('Ordene patamares crescentes, sem reduzir tempo ou taxa ao aumentar o volume.');
+      threshold=r.minOrders;extraMinutes=r.extraMinutes;
     }
     if(t.timeMode==='volume'&&!t.volumeRules.some(r=>r.extraMinutes>0))fail('Defina os minutos de preparo nos patamares por quantidade.');
-    if(t.feeMode==='demand'&&!t.volumeRules.length)fail('Cadastre ao menos um patamar para taxa por demanda.');
+    if(!Array.isArray(t.feeRules))fail('Patamares da taxa de pico inválidos.');
+    let feeThreshold=0,feeExtra=0;
+    for(const r of t.feeRules){finite(r.minOrders,1,10000,'Volume da taxa de pico inválido.');finite(r.extraFee,0,1000,'Acréscimo da taxa de pico inválido.');if(!Number.isInteger(r.minOrders)||r.minOrders<=feeThreshold||r.extraFee<feeExtra||!cents(r.extraFee))fail('Ordene os patamares de taxa por pedidos crescentes e valores em reais crescentes, com até duas casas decimais.');feeThreshold=r.minOrders;feeExtra=r.extraFee;}
+    if(t.feeMode==='demand'&&!t.feeRules.some(r=>r.extraFee>0))fail('Defina ao menos um patamar de taxa de pico com acréscimo positivo.');
     finite(t.maxMinutes,1,1440,'Limite de prazo inválido.');
     if(!Number.isInteger(t.maxMinutes)||!Array.isArray(t.bands)||!t.bands.length) fail('Faixas ou limite inválidos.');
     let km=0;
@@ -89,7 +92,7 @@ export function validate(c) {
       km=b.km;
       if(b.fee!==null){finite(b.fee,0,1000,'Taxa inválida.');if(!cents(b.fee))fail('Use até duas casas decimais na taxa-base.');}
       if(t.feeMode!=='preserve'&&b.fee===null) fail('Preencha todas as taxas no modo configurado.');
-      if(t.feeMode==='demand'&&b.fee+(t.volumeRules.at(-1)?.extraFee||0)>t.maxFee)fail('Taxa-base mais acréscimo supera o teto desta loja.');
+      if(t.feeMode==='demand'&&b.fee+(t.feeRules.at(-1)?.extraFee||0)>t.maxFee)fail('Taxa-base mais acréscimo supera o teto desta loja.');
     }
     if(c.mode==='live'&&t.enabled&&!t.semanticsConfirmed) fail('Confirme o significado do campo Tempo antes de ativar a escrita.');
   }
@@ -167,11 +170,12 @@ export function adjustment(target,snapshot,state,c,now=Date.now()){
   const productionMinutes=selectedAge(target,snapshot,c,now,kitchenAge);
   const desiredTime=timeContribution(target,productionMinutes,rule);
   const next=nextOffset(desiredTime,state,c);
-  const fee=nextOffset(Math.round((target.feeMode==='demand'?rule.extraFee:0)*100),
+  const surge=feeRule(target,snapshot);
+  const fee=nextOffset(Math.round(surge.extraFee*100),
     {offset:state.feeOffsetCents,lowerCount:state.feeLowerCount},
     {...c,decreaseStepMinutes:Math.round(target.decreaseStepFee*100)});
   const nextState={...next,feeOffsetCents:fee.offset,feeLowerCount:fee.lowerCount};
-  return {next:nextState,rows:plan(target,next.offset,fee.offset/100),productionMinutes,desiredTime,...rule};
+  return {next:nextState,rows:plan(target,next.offset,fee.offset/100),productionMinutes,desiredTime,...rule,feeVolume:surge.volume,feeThreshold:surge.threshold,desiredFee:surge.extraFee};
 }
 
 export function deliveryMinutes(target,band){
@@ -197,4 +201,11 @@ export function selectedAge(target,snapshot,c,now=Date.now(),kitchenAge=demand(s
 export function stepRows(desired,current,step,instant=desired){
   if(!Array.isArray(current)||current.length!==desired.length||desired.some((r,i)=>r.km!==current[i].km))fail('Faixas do iFood e do cadastro não correspondem.');
   return desired.map((r,i)=>{let minutes=Math.min(current[i].minutes+step,Math.max(current[i].minutes-step,r.minutes));if(minutes>current[i].minutes)minutes=Math.min(minutes,Math.max(current[i].minutes,instant[i].minutes));return {...r,minutes};});
+}
+
+// A taxa de pico é independente da regra de tempo e conta somente Cozinha.
+export function feeRule(target,snapshot){
+  const volume=snapshot.count;if(!Number.isInteger(volume)||volume<0)fail('Contagem de Cozinha inválida para taxa de pico.');
+  const rule=target.feeMode==='demand'?[...target.feeRules].reverse().find(r=>volume>=r.minOrders):null;
+  return {volume,threshold:rule?.minOrders??null,extraFee:rule?.extraFee||0};
 }
