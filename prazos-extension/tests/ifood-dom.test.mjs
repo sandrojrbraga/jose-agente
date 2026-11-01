@@ -99,8 +99,8 @@ test('store menu remaining open after ID selection closes before filling or savi
 test('store menu already open at cycle start is closed and selection restarts safely',async()=>{
  const r=await menuScenario({initiallyOpen:true});assert.equal(r.result.ok,true);assert.equal(r.closed,2);assert.equal(r.saves,1);
 });
-test('unrecognized modal and status menu without recognized backdrop block before effects',async()=>{
- for(const opts of [{unknown:true},{initiallyOpen:true,backdropMissing:true}]){
+test('unrecognized modal blocks before effects',async()=>{
+ for(const opts of [{unknown:true}]){
   const r=await menuScenario(opts);assert.ok(r.result.error);assert.equal(r.writes,0);assert.equal(r.saves,0);
  }
 });
@@ -117,4 +117,8 @@ test('every automated iFood click waits 3000 ms, including store menu and Save',
 });
 test('source expiring during click delay aborts before selector or write',async()=>{
  const r=await menuScenario({expireDuringDelay:true});assert.match(r.result.error,/venceu/);assert.equal(r.saves,0);assert.equal(r.writes,0);assert.equal(r.closed,0);
+});
+
+test('compact Portal without clickable status backdrop closes known menu through header toggle',async()=>{
+ const r=await menuScenario({initiallyOpen:true,backdropMissing:true});assert.equal(r.result.ok,true);assert.equal(r.menuOpen,false);assert.equal(r.saves,1);
 });

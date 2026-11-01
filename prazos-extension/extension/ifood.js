@@ -1,7 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===11)return;
+  if(window.joseIfoodVersion===12)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=11;
+  window.joseIfoodVersion=12;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>window.JoseIfoodDom.visible(e);
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -53,8 +53,12 @@
     const menu=swapButton()?.closest?.('[role="dialog"]');
     if(!dialogOpen(menu))return;
     const backdrop=menu.querySelector('[role="presentation"]');
-    if(!visible(backdrop))throw Error('Menu da loja aberto sem controle de fechamento reconhecido. Feche o menu para continuar.');
-    await clickAfterDelay(()=>menu.querySelector('[role="presentation"]'),guard);
+    if(visible(backdrop)){
+      await clickAfterDelay(()=>menu.querySelector('[role="presentation"]'),guard);
+      try{await until(()=>!dialogOpen(menu),'Menu ainda aberto.',2500);return;}catch{}
+    }
+    // Layout compacto/anônimo pode não expor um fundo clicável. O mesmo botão do cabeçalho alterna este menu conhecido.
+    if(dialogOpen(menu))await clickAfterDelay(header,guard);
     await until(()=>!dialogOpen(menu),'O menu da loja não fechou. Nenhum valor será preenchido.');
   }
   function ensureNoDialog(){if(activeDialogs().length)throw Error('Há uma janela sobre a tela de entrega. Feche-a antes do ajuste.');}
@@ -122,7 +126,7 @@
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {readerVersion:11,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:12,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ'){checkHeader(m.target);const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal.');return {ok:true,rows:publicRows(readRows())};}
       if(m.type==='JOSE_VERIFY'){
         checkHeader(m.target);

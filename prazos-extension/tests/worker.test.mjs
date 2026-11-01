@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaults} from '../extension/core.mjs';
-let verificationOk=true,portalUnsaved=false,reloaded=[],destinations=[];
+let samePortalValues=false,verificationOk=true,portalUnsaved=false,reloaded=[],destinations=[];
 let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false,legacyIfood=false,inventory=[],changedWrite=false;
 const clone=x=>structuredClone(x);
 globalThis.chrome={
@@ -17,7 +17,7 @@ globalThis.chrome={
     if(m.type==='SAIPOS_READ')return {readerVersion:5,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:verificationOk};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:11,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:12,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-(samePortalValues?0:1),fee:6.99}))};
     throw Error('Unexpected message');
   }}
 };
@@ -29,7 +29,7 @@ function setup(mode='simulate'){
   // Manual simulation ignores the clock; live tests set a window containing now.
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:c.timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
   if(p==='23:59')c.schedule={days:[0,1,2,3,4,5,6],start:'23:58',end:'23:57'};
-  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;inventory=[];changedWrite=false;verificationOk=true;portalUnsaved=false;reloaded=[];destinations=[];
+  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;inventory=[];changedWrite=false;samePortalValues=false;verificationOk=true;portalUnsaved=false;reloaded=[];destinations=[];
 }
 test('simulation reads both platforms but never sends write commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ','JOSE_INSPECT']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
@@ -148,4 +148,8 @@ test('automatic confirmation leaves unsaved manual fields untouched',async()=>{
 test('confirmed pending command updates edit history from recorded before values',async()=>{
  setup('live');pendingAt();store.states['live:3148479'].pending.before=[{km:.5,minutes:25,fee:6.99}];
  const r=await call({type:'TICK'});assert.equal(r.results[0].revalidated,true);assert.equal(store.timeEdits['3148479']['0.5'].before,25);assert.equal(store.timeEdits['3148479']['0.5'].after,22);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+});
+
+test('live cycle with matching values never selects a store, executes or creates pending work',async()=>{
+ setup('live');samePortalValues=true;const r=await call({type:'TICK'});assert.equal(r.results[0].readOnly,true);assert.equal(r.results[0].changed,false);assert.equal(store.states['live:3148479'].pending,undefined);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);assert.equal(store.logs[0].type,'unchanged');assert.deepEqual(reloaded,[]);
 });

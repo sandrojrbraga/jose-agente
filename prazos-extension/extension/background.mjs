@@ -19,7 +19,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===11)&&(m.type!=='SAIPOS_READ'||r.readerVersion===5))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===12)&&(m.type!=='SAIPOS_READ'||r.readerVersion===5))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -27,7 +27,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==11)||(m.type==='SAIPOS_READ'&&r.readerVersion!==5))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==12)||(m.type==='SAIPOS_READ'&&r.readerVersion!==5))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -132,6 +132,11 @@ async function tick(manual=false){
         }
         if(!portal?.ok)throw Error(portal?.error||'Leia a tabela iFood antes de ajustar.');
         if(!(await get()).config.enabled||!inSchedule(Date.now(),c))break;
+        if(rows.every((b,i)=>b.minutes===portal.rows[i].minutes&&(b.fee===null||Math.round(b.fee*100)===Math.round(portal.rows[i].fee*100)))){
+          states[key]={...next};await storage.set({states});
+          results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,feeExtra:next.feeOffsetCents/100,breakdown,desiredRows,rows,changed:false,readOnly:true});
+          await log({storeId:t.id,type:'unchanged',readOnly:true,breakdown});continue;
+        }
         let bound;try{bound=await ownedTab(chrome,t.tabId,incognito);}catch{}
         if(!bound?.url?.startsWith('https://portal.ifood.com.br/merchant-delivery-core-portal-experience')){
           const candidates=await queryTabs({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});

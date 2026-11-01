@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.10.0
+# José — Tempo e taxa Saipos/iFood · v0.10.1
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -260,3 +260,14 @@ Todos os cliques automáticos no iFood passam por uma espera fixa de 3000 ms ant
 Dashboard explica a soma e mostra quantos pedidos de Aguardando foram incluídos/excluídos. Diagnóstico registra a espera e o resumo por tipo. O atraso foi solicitado para testar a hipótese de interface ainda em atualização; não há evidência suficiente para atribuir todos os bloqueios à velocidade. A instalação e os salvamentos contínuos continuam pendentes de validação.
 
 Atualize os arquivos na mesma pasta já carregada, sem remover a extensão. A atualização pausa a operação. Revise a opção Cozinha + Aguardando, revalide eventual pendência e depois inicie. Dados normais existentes são preservados; dados anônimos são temporários. Não houve alteração de prazo/taxa no iFood durante o desenvolvimento desta versão.
+
+
+## Correção 0.10.1 — ciclos sem mudança e menu em layout compacto
+
+O diagnóstico 0.10.0 do ambiente anônimo registrou dois salvamentos reais confirmados após recarga. Em seguida, os ciclos bloquearam porque o menu da loja não apresentava um fundo reconhecido como clicável. O último comando pendente ainda estava no estágio prepared no instante da exportação; isso não prova envio ao servidor.
+
+Antes de criar um comando de escrita, o worker agora compara os valores calculados com a leitura atual válida da loja. Se minutos e taxas aplicáveis já correspondem, atualiza o estado do cálculo e registra ciclo sem alteração, sem abrir seletor, enviar JOSE_EXECUTE, salvar ou criar pendência. Essa comparação não libera uma pendência anterior nem registra nova alteração confirmada.
+
+Quando o menu conhecido da loja estiver aberto e o fundo não for clicável, o leitor usa o mesmo botão do cabeçalho que abre/fecha esse menu. Se o fundo existir, tenta fechá-lo por ele; somente se o menu continuar aberto usa a alternativa. Aguarda o fechamento antes de continuar. Outras janelas continuam bloqueando. Todos os cliques preservam a espera de 3 segundos e a conferência de identidade. Protocolo iFood 12; Saipos continua 5.
+
+Os testes simulam layout sem fundo clicável e ciclo com tabela já correta. O diagnóstico demonstra os dois salvamentos da versão anterior; não constitui validação instalada desta atualização. Atualização no mesmo diretório preserva dados normais, mas configuração anônima é temporária e pode ser perdida ao recarregar. Antes de atualizar em anônimo, exporte a configuração para reaplicá-la se necessário. Após atualizar, conferir/revalidar eventual pendência e iniciar o monitoramento.
