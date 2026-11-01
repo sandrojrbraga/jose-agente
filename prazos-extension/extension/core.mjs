@@ -199,7 +199,10 @@ export function selectedAge(target,snapshot,c,now=Date.now(),kitchenAge=demand(s
 }
 // Um passo por ciclo, a partir do valor realmente lido no Portal.
 export function stepRows(desired,current,step,instant=desired){
-  if(!Array.isArray(current)||current.length!==desired.length||desired.some((r,i)=>r.km!==current[i].km))fail('Faixas do iFood e do cadastro não correspondem.');
+  if(!Array.isArray(current))fail('Tabela atual do iFood indisponível.');
+  const extra=desired.filter(r=>!current.some(c=>c.km===r.km)).map(r=>r.km+' km');
+  const missing=current.filter(r=>!desired.some(c=>c.km===r.km)).map(r=>r.km+' km');
+  if(current.length!==desired.length||desired.some((r,i)=>r.km!==current[i]?.km))fail('Faixas do iFood e do cadastro não correspondem.'+(extra.length?' Somente no cadastro: '+extra.join(', ')+'.':'')+(missing.length?' Faltam no cadastro: '+missing.join(', ')+'.':'')+(!extra.length&&!missing.length?' Confira a ordem das distâncias.':' Revise as faixas em Parâmetros e salve.'));
   return desired.map((r,i)=>{let minutes=Math.min(current[i].minutes+step,Math.max(current[i].minutes-step,r.minutes));if(minutes>current[i].minutes)minutes=Math.min(minutes,Math.max(current[i].minutes,instant[i].minutes));return {...r,minutes};});
 }
 

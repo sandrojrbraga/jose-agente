@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.6
+# José — Tempo e taxa Saipos/iFood · v0.9.7
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -210,3 +210,18 @@ A revalidação usava o ID histórico da aba do comando pendente, mesmo quando a
 Loja diferente, outro ambiente, abas ambíguas, formulário não salvo e valores divergentes mantêm a pendência. A configuração continua bloqueada para edição enquanto houver resultado incerto. Uma resposta incerta que inclui valores esperados passa a preservá-los antes de tratar o erro. Sucesso de revalidação é registrado no histórico; o próximo ciclo atualiza o cartão de operação.
 
 Para atualizar uma instalação existente, recarregar a mesma extensão sem removê-la, preservando os dados normais. Atualizações pausam o monitoramento. Abrir Entrega da mesma loja, revalidar a pendência e só então iniciar monitoramento novamente. No ambiente anônimo, dados temporários podem ser perdidos ao recarregar a extensão. Testes simulados não substituem a validação do salvamento no Portal real.
+
+
+## Correção 0.9.7 — confirmação automática e diagnóstico acionável
+
+Os diagnósticos da operação demonstraram uma alteração confirmada por recarga, seguida de novos timeouts na espera pelo botão Salvar. Conexão, preenchimento, clique e persistência são etapas diferentes. O tempo limite do botão não prova que a gravação falhou, portanto não autoriza repetir o comando.
+
+- Enquanto ativo e no horário, um ciclo com pendência tenta apenas conferir esse comando. Não calcula/envia outro ajuste no mesmo ciclo em que o confirma.
+- A conferência usa a identidade e os valores originais, recupera a aba correta do mesmo ambiente, exige formulário sem edições não salvas, recarrega e compara os valores persistidos. Nunca salva, troca loja ou reenvia o comando durante a recuperação.
+- Se falhar, mantém a pendência com motivo e nova tentativa de conferência em no mínimo 60 segundos. O botão Revalidar permite conferir imediatamente, inclusive pausado. Valores divergentes e formulários sujos continuam exigindo revisão.
+- Respostas do executor preservam antes/depois e um resumo do botão/validação quando o salvamento fica incerto. O protocolo iFood passou a 8 para atualizar leitores de abas já abertas.
+- Revalidação confirmada aparece como última alteração e registra antes/depois quando disponíveis. O painel distingue ciclo bloqueado de ciclo concluído.
+- Erro de faixas informa quais distâncias existem somente no cadastro e quais faltam nele; não remove ou inventa raios automaticamente.
+- Diagnóstico inclui estágio, horário e erro da conferência, valores antes/esperados e estado do envio, sem credenciais ou cartões brutos.
+
+Atualize os arquivos e recarregue a mesma extensão sem remover a instalação. Atualização pausa o monitoramento. No ambiente normal, os parâmetros e pendências permanecem. Se houver envio pendente, revalide primeiro; se não puder confirmar, mantenha pausado e confira o Portal. Somente depois inicie o monitoramento. Os testes são simulados; a homologação de operação contínua na loja permanece pendente.

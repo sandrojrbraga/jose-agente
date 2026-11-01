@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {defaults,migrate,STORE_CATALOG,validate,inSchedule,productionAge,demand,nextOffset,plan} from '../extension/core.mjs';
+import {defaults,migrate,STORE_CATALOG,validate,inSchedule,productionAge,demand,nextOffset,plan,stepRows} from '../extension/core.mjs';
 const now=Date.parse('2026-11-01T00:12:00Z'); // 31/10, 21h12 em Fortaleza
 const card=(created='31/out, 21:08',since='Desde 21:08 (04m)')=>({id:'sale-1',created,since});
 test('defaults are paused, simulate and preserve fees',()=>{const c=validate(defaults());assert.equal(c.enabled,false);assert.equal(c.mode,'simulate');assert.equal(c.targets.length,11);assert.ok(c.targets.every(t=>t.feeMode==='preserve'));assert.equal(c.targets.filter(t=>t.enabled).length,1);});
@@ -21,3 +21,7 @@ test('unordered and fractional-minute bands rejected; arbitrary integer minutes 
 
 test('catalog IDs are exact, unique and known shared P8 is preserved',()=>{const c=defaults();assert.equal(new Set(STORE_CATALOG.map(x=>x[0])).size,11);for(const id of ['3148479','3450370','3179932'])assert.equal(c.targets.find(t=>t.id===id).sourceId,'p8');assert.equal(c.targets.find(t=>t.id==='3521126').sourceId,'');});
 test('migration preserves customized values and pauses before live writes',()=>{const c=defaults();c.version=1;c.mode='live';c.enabled=true;c.targets=c.targets.filter(t=>t.id==='3148479');c.targets[0].bands[0].minutes=19;const m=migrate(c);assert.equal(m.targets.length,11);assert.equal(m.mode,'simulate');assert.equal(m.enabled,false);assert.equal(m.targets.find(t=>t.id==='3148479').bands[0].minutes,19);});
+
+test('distance mismatch names missing and extra radii for actionable configuration repair',()=>{
+ assert.throws(()=>stepRows([{km:.5,minutes:20},{km:7,minutes:50}],[{km:.5,minutes:20},{km:6,minutes:40}],3),/Somente no cadastro: 7 km.*Faltam no cadastro: 6 km/);
+});

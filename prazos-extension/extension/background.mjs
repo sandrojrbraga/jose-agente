@@ -19,7 +19,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===7)&&(m.type!=='SAIPOS_READ'||r.readerVersion===4))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===8)&&(m.type!=='SAIPOS_READ'||r.readerVersion===4))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -27,7 +27,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==7)||(m.type==='SAIPOS_READ'&&r.readerVersion!==4))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==8)||(m.type==='SAIPOS_READ'&&r.readerVersion!==4))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -62,6 +62,32 @@ async function readPortal(c){
     await storage.set({portal:result});return result;
   }catch(e){const result={ok:false,error:e.message,readAt:Date.now(),targetId:target?.id,tabId,latencyMs:Date.now()-start};await storage.set({portal:result});return result;}
 }
+async function reconcilePending(d,key,automatic=false){
+  const p=d.states[key].pending;
+  if(automatic&&p.lastVerifyAt&&Date.now()-p.lastVerifyAt<60000)throw Error('Aguardando nova conferência automática do envio pendente; nenhum reenvio será feito.');
+  p.lastVerifyAt=Date.now();p.stage='verifying';await storage.set({states:d.states});
+  try{
+    const expected=p.expected||p.job.rows.map(b=>({...b,fee:p.job.target.feeMode==='preserve'?null:b.fee}));
+    const saved=d.config.targets.find(t=>t.id===p.job.target.id);
+    if(!saved||d.config.profile.targetId!==p.job.target.id)throw Error('O envio pendente pertence a outra loja. Nenhuma revalidação foi realizada.');
+    const resolved=await resolvePortalTab(chrome,incognito,{...p.job.target,tabId:saved.tabId});
+    const target={...p.job.target,tabId:resolved.tab.id,profilePinned:true};
+    // Nunca descartar um formulário sujo: a conferência é somente de leitura.
+    auditIfood(await send(target.tabId,{type:'JOSE_INSPECT'}),target,null,d.config);
+    if(saved.tabId!==target.tabId)await bind('targets',target.id,target.tabId);
+    p.job.target=target;await storage.set({states:d.states});
+    const check=await verifyReload(target,expected);
+    if(!check.ok)throw Error(check.error||'Valores persistidos não conferem com o envio pendente. Nenhum comando foi reenviado.');
+    d.states[key]={offset:p.offset,lowerCount:p.lowerCount,feeOffsetCents:p.feeOffsetCents,feeLowerCount:p.feeLowerCount};
+    await storage.set({states:d.states});
+    const at=new Date().toISOString(),timeEdits=(await get()).timeEdits;
+    for(const row of expected){const before=p.before?.find(b=>b.km===row.km);if(before&&before.minutes!==row.minutes){timeEdits[target.id]||={};timeEdits[target.id][String(row.km)]={km:row.km,before:before.minutes,after:row.minutes,at};}}
+    await storage.set({timeEdits});
+    await log({storeId:target.id,type:'revalidated',automatic,jobId:p.job.id,tabId:target.tabId,before:p.before,after:expected});
+    await readPortal(d.config);
+    return {id:target.id,name:target.name,mode:'live',verified:true,revalidated:true,changed:true,rows:expected};
+  }catch(e){p.stage='awaiting-confirmation';p.lastError=e.message;await storage.set({states:d.states});throw e;}
+}
 async function ensureAlarm(){const {config}=await get();await chrome.alarms.create(alarmName,{periodInMinutes:Math.max(30,config.intervalSeconds)/60});}
 async function tick(manual=false){
   if(running)return {busy:true};running=true;
@@ -93,7 +119,7 @@ async function tick(manual=false){
     for(const t of c.targets.filter(t=>t.enabled)){
       const key=c.mode+':'+t.id,st=states[key]||{};
       try {
-        if(st.pending)throw Error('Resultado anterior pendente. Use Revalidar antes de outro envio.');
+        if(st.pending){results.push(await reconcilePending(d,key,true));continue;}
         const source=sources[t.sourceId];if(!source||source.error){st.lowerCount=0;st.feeLowerCount=0;states[key]=st;throw Error(source?.error||'Sem fonte.');}
         const calc=adjustment(t,source,st,c),{next,rows:adjustmentRows,productionMinutes:desired}=calc;
         const desiredRows=plan(t,calc.desiredTime,next.feeOffsetCents/100);
@@ -113,10 +139,14 @@ async function tick(manual=false){
         }
         const job={type:'JOSE_EXECUTE',id:crypto.randomUUID(),target:{...t,profilePinned:true},rows,expiresAt:source.capturedAt+c.staleSeconds*1000};
         // Persistir antes do primeiro efeito externo; recuperação nunca reenvia às cegas.
-        states[key]={...st,pending:{job,...next}};
+        states[key]={...st,pending:{job,...next,createdAt:Date.now(),stage:'prepared'}};
         await storage.set({states});
         const r=await send(t.tabId,job);
-        if(r.expected){states[key].pending.expected=r.expected;await storage.set({states});}
+        if(r.expected)states[key].pending.expected=r.expected;
+        if(r.before)states[key].pending.before=r.before;
+        states[key].pending.submission=r.submission||null;
+        states[key].pending.stage=r.ok?'verifying':r.uncertain?'awaiting-confirmation':'not-submitted';
+        await storage.set({states});
         if(!r.ok){if(!r.uncertain){delete states[key].pending;await storage.set({states});}throw Error(r.error||'Envio não confirmado.');}
         states[key].pending.expected=r.expected;
         await storage.set({states});
@@ -129,7 +159,7 @@ async function tick(manual=false){
       }catch(e){if(states[key]){states[key].lowerCount=0;states[key].feeLowerCount=0;}results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
       await storage.set({states});
     }
-    const status={at:Date.now(),message:results.length?'Ciclo concluído':'Habilite pelo menos um destino para simular.',sources,results};
+    const status={at:Date.now(),message:results.some(r=>r.error)?'Ciclo com ajustes bloqueados':results.length?'Ciclo concluído':'Habilite pelo menos um destino para simular.',sources,results};
     await storage.set({status});
     await chrome.action.setBadgeText({text:results.some(r=>r.error)?'!':c.mode==='live'?'ON':'SIM'});
     await chrome.action.setBadgeBackgroundColor({color:results.some(r=>r.error)?'#b42318':'#176b52'});
@@ -257,22 +287,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
       try{
         const d=await get();let count=0;
         for(const [key,s] of Object.entries(d.states))if(s.pending){
-          const p=s.pending;
-          const expected=p.expected||p.job.rows.map(b=>({...b,fee:p.job.target.feeMode==='preserve'?null:b.fee}));
-          const saved=d.config.targets.find(t=>t.id===p.job.target.id);
-          if(!saved||d.config.profile.targetId!==p.job.target.id)throw Error('O envio pendente pertence a outra loja. Nenhuma revalidação foi realizada.');
-          // O comando preserva sua identidade e valores originais; apenas o vínculo da aba pode mudar.
-          const resolved=await resolvePortalTab(chrome,incognito,{...p.job.target,tabId:saved.tabId});
-          const target={...p.job.target,tabId:resolved.tab.id,profilePinned:true};
-          auditIfood(await send(target.tabId,{type:'JOSE_INSPECT'}),target,null,d.config);
-          if(saved.tabId!==target.tabId)await bind('targets',target.id,target.tabId);
-          p.job.target=target;await storage.set({states:d.states});
-          // Recarregar e reler distingue valores persistidos de um simples preenchimento na tela.
-          const check=await verifyReload(target,expected);
-          if(!check.ok)throw Error(check.error||'Valores ainda não conferem. Não houve reenvio.');
-          d.states[key]={offset:p.offset,lowerCount:p.lowerCount,feeOffsetCents:p.feeOffsetCents,feeLowerCount:p.feeLowerCount};
-          await storage.set({states:d.states});
-          await log({storeId:target.id,type:'revalidated',jobId:p.job.id,tabId:target.tabId,after:expected});count++;
+          await reconcilePending(d,key);count++;
         }
         await storage.set({states:d.states});return {ok:true,count};
       }finally{running=false;}

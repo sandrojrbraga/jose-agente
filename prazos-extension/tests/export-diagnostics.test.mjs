@@ -1,3 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {defaults} from '../extension/core.mjs';import {diagnosticReport} from '../extension/export-diagnostics.mjs';
 test('export includes saved activation and latest error instead of only historic connection tests',()=>{const c=defaults();c.enabled=true;c.mode='live';const target=c.targets.find(t=>t.enabled);const state={config:c,context:'normal',portal:{ok:false,error:'Aba fechada'},status:{at:123,message:'Ciclo bloqueado',results:[{id:target.id,error:'Faixas diferentes'}],sources:{p8:{count:4,age:10,capturedAt:120,cards:[{customer:'Não exportar'}]}}},logs:[],states:{['live:'+target.id]:{pending:{}}}};const r=diagnosticReport(state,{saipos:{ok:true}},'0.9.5',1000);assert.equal(r.monitor.enabled,true);assert.equal(r.monitor.mode,'live');assert.equal(r.target.id,'3148479');assert.equal(r.ifood.error,'Aba fechada');assert.equal(r.status.results[0].error,'Faixas diferentes');assert.equal(r.pending,true);assert.equal(r.sourceReading.count,4);assert.equal(JSON.stringify(r).includes('Não exportar'),false);});
+
+test('pending diagnostic exposes original expected values and confirmation stage without arbitrary job data',()=>{
+ const config=defaults(),target=config.targets.find(t=>t.enabled);
+ const state={config,context:'normal',status:{},logs:[],states:{['live:'+target.id]:{pending:{createdAt:10,stage:'awaiting-confirmation',lastError:'timeout',before:[{km:.5,minutes:25}],expected:[{km:.5,minutes:22}],submission:{submitted:true,saveDisabled:false},job:{id:'job',secret:'never export'}}}}};
+ const r=diagnosticReport(state,{},'0.9.7');assert.equal(r.pending,true);assert.equal(r.pendingDetails.expected[0].minutes,22);assert.equal(r.pendingDetails.stage,'awaiting-confirmation');assert.equal(JSON.stringify(r).includes('never export'),false);
+});

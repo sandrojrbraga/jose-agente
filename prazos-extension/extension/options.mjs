@@ -119,9 +119,9 @@ function renderOverview(d){
   }
   const surge=result?.breakdown;$('feeSurgeState').textContent=target?.feeMode==='demand'?`Taxa de pico ATIVADA · somente Cozinha${surge?.feeEnabled?' · '+surge.feeVolume+' pedidos · acréscimo calculado R$ '+surge.feeExtra.toFixed(2):' · aguarda cálculo'}`:'Taxa de pico DESATIVADA · tempo automático independente';
   $('monitorState').textContent=!saved.enabled?'Pausado':!inSchedule(now,saved)?'Fora do horário':d.status.error||result?.error?'Bloqueado':saved.mode==='simulate'?'Simulação':'Execução';
-  $('monitorNote').textContent=!saved.enabled&&$('enabled').checked?'Ativação marcada no formulário, ainda não salva.':`Configuração salva · ciclo de ${saved.intervalSeconds}s`;
+  $('monitorNote').textContent=Object.entries(d.states||{}).some(([key,s])=>key.endsWith(':'+target?.id)&&s.pending)?'Envio pendente · conferência automática sem reenvio a cada 60s enquanto ativo':!saved.enabled&&$('enabled').checked?'Ativação marcada no formulário, ainda não salva.':`Configuração salva · ciclo de ${saved.intervalSeconds}s`;
   const edits=Object.values(d.timeEdits?.[target?.id]||{}).map(e=>({type:'saved',storeId:target.id,at:e.at,before:[{km:e.km,minutes:e.before}],after:[{km:e.km,minutes:e.after}]}));
-  const last=d.logs.find(l=>l.type==='saved'&&l.storeId===target?.id)||edits.sort((a,b)=>b.at.localeCompare(a.at))[0];
+  const last=d.logs.find(l=>['saved','revalidated'].includes(l.type)&&l.storeId===target?.id)||edits.sort((a,b)=>b.at.localeCompare(a.at))[0];
   $('lastSaved').textContent=last?new Date(last.at).toLocaleTimeString('pt-BR'):'Nenhuma registrada';
   $('lastSavedNote').textContent=last?'Salva e relida no Portal':'Simulação e leitura não contam como alteração.';
   $('comparison').replaceChildren();
@@ -141,7 +141,7 @@ function updatePortal(){
 async function refresh(){
   const d=await call({type:'STATE'});renderOverview(d);$('status').replaceChildren();
   const p=el('p',d.status.at?`${new Date(d.status.at).toLocaleString('pt-BR')} · ${d.status.message}`:'Nenhum ciclo executado.');$('status').append(p);
-  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':r.changed?'ALTERAÇÃO CONFIRMADA':'JÁ ESTAVA CORRETO'} · pedido mais antigo: ${r.productionMinutes} min · preparo aplicado: ${r.preparationMinutes??r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`));
+  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||(r.revalidated?'SALVAMENTO REVALIDADO · confirmado após recarga':`${r.mode==='simulate'?'SIMULAÇÃO':r.changed?'ALTERAÇÃO CONFIRMADA':'JÁ ESTAVA CORRETO'} · pedido mais antigo: ${r.productionMinutes} min · preparo aplicado: ${r.preparationMinutes??r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`)));
     if(r.rows)c.append(el('pre',r.rows.map(b=>`${b.km} km → ${b.minutes} min${b.fee!==null?' · R$ '+b.fee.toFixed(2):''}`).join('\n')));$('status').append(c);}
   $('logs').textContent=JSON.stringify(d.logs,null,2);
   showTests(await call({type:'TEST_RESULTS'}));

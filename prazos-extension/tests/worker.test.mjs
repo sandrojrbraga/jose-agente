@@ -17,7 +17,7 @@ globalThis.chrome={
     if(m.type==='SAIPOS_READ')return {readerVersion:4,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
     if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:verificationOk};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:7,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:8,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:portalUnsaved,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
     throw Error('Unexpected message');
   }}
 };
@@ -34,7 +34,7 @@ function setup(mode='simulate'){
 test('simulation reads both platforms but never sends write commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ','JOSE_INSPECT']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
 test('live confirmed no-op clears pending and records confirmation',async()=>{setup('live');const r=await call({type:'TICK'});assert.equal(r.results[0].verified,true);assert.equal(store.states['live:3148479'].pending,undefined);assert.equal(store.logs[0].type,'unchanged');});
-test('unresolved job blocks resend after worker recovery',async()=>{setup('live');store.states['live:3148479']={offset:10,pending:{job:{target:store.config.targets[0],rows:[{km:.5,minutes:25,fee:null}]},offset:10,lowerCount:0}};await call({type:'TICK'});assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);const r=await call({type:'REVERIFY'});assert.equal(r.count,1);assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);assert.equal(store.states['live:3148479'].pending,undefined);});
+test('unresolved job is automatically verified after worker recovery without resend',async()=>{setup('live');store.states['live:3148479']={offset:10,pending:{job:{target:store.config.targets[0],rows:[{km:.5,minutes:25,fee:null}]},offset:10,lowerCount:0}};await call({type:'TICK'});assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);const r=await call({type:'REVERIFY'});assert.equal(r.count,0);assert.equal(messages.filter(m=>m.type==='JOSE_EXECUTE').length,0);assert.equal(store.states['live:3148479'].pending,undefined);assert.equal(store.logs[0].automatic,true);});
 test('configuration cannot bypass unresolved operations',async()=>{setup();store.states.x={pending:{}};const r=await call({type:'SAVE',config:store.config});assert.match(r.error,/pendentes/);});
 test('failed source resets reduction count and retains last offset',async()=>{setup();store.config.sources[0].storeId='999';store.states['simulate:3148479']={offset:20,lowerCount:1};const r=await call({type:'TICK'});assert.ok(r.results[0].error);assert.equal(store.states['simulate:3148479'].offset,20);assert.equal(store.states['simulate:3148479'].lowerCount,0);});
 test('content scripts cannot invoke administrative controls',async()=>{let responded=false;const result=listener({type:'PAUSE'},{id:'test-extension',url:'https://conta.saipos.com/',tab:{id:1}},()=>responded=true);assert.equal(result,undefined);assert.equal(responded,false);});
@@ -134,4 +134,18 @@ test('unsaved Portal form is never discarded during pending revalidation',async(
 });
 test('persisted values that differ retain pending job, with no repeated execution',async()=>{
  setup('live');pendingAt();verificationOk=false;const r=await call({type:'REVERIFY'});assert.match(r.error,/não conferem/);assert.ok(store.states['live:3148479'].pending);assert.deepEqual(reloaded,[2]);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+});
+
+test('automatic recovery never replays or discards mismatched persisted values; checks are throttled',async()=>{
+ setup('live');pendingAt();verificationOk=false;
+ let r=await call({type:'TICK'});assert.match(r.results[0].error,/persistidos/);assert.ok(store.states['live:3148479'].pending);assert.equal(reloaded.length,1);
+ r=await call({type:'TICK'});assert.match(r.results[0].error,/Aguardando nova/);assert.equal(reloaded.length,1);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+ verificationOk=true;r=await call({type:'REVERIFY'});assert.equal(r.count,1);assert.equal(reloaded.length,2);
+});
+test('automatic confirmation leaves unsaved manual fields untouched',async()=>{
+ setup('live');pendingAt();portalUnsaved=true;const r=await call({type:'TICK'});assert.match(r.results[0].error,/não salvas/);assert.ok(store.states['live:3148479'].pending);assert.equal(reloaded.length,0);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+});
+test('confirmed pending command updates edit history from recorded before values',async()=>{
+ setup('live');pendingAt();store.states['live:3148479'].pending.before=[{km:.5,minutes:25,fee:6.99}];
+ const r=await call({type:'TICK'});assert.equal(r.results[0].revalidated,true);assert.equal(store.timeEdits['3148479']['0.5'].before,25);assert.equal(store.timeEdits['3148479']['0.5'].after,22);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
 });

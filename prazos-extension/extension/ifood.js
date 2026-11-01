@@ -1,7 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===7)return;
+  if(window.joseIfoodVersion===8)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=7;
+  window.joseIfoodVersion=8;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -85,13 +85,13 @@
     } catch(e){
       // Antes de enviar, desfazer somente o preenchimento deste comando.
       if(!submitted&&header()&&normalized(storeName())===normalized(m.target.name))button('Cancelar')?.click();
-      return {error:e.message,uncertain:submitted,expected,before:publicRows(before)};
+      return {error:e.message,uncertain:submitted,expected,before:publicRows(before),submission:{submitted,savePresent:!!button('Salvar'),saveDisabled:button('Salvar')?.disabled??null,invalidFields:!!document.querySelector('input[aria-invalid="true"]')}};
     }
   }
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {readerVersion:7,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:8,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ'){checkHeader(m.target);const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal.');return {ok:true,rows:publicRows(readRows())};}
       if(m.type==='JOSE_VERIFY'){
         checkHeader(m.target);
