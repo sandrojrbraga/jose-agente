@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES} from '../extension/context.mjs';
+import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES,resolvePortalTab} from '../extension/context.mjs';
 const area=data=>({get:async keys=>Object.fromEntries(keys.filter(k=>k in data).map(k=>[k,structuredClone(data[k])])),set:async patch=>Object.assign(data,structuredClone(patch))});
 test('private storage never reads or changes normal config, runtime state or history',async()=>{const local={config:{enabled:true},logs:[1]},session={},chrome={storage:{local:area(local),session:area(session)}};const regular=contextStore(chrome,false),privateStore=contextStore(chrome,true);assert.deepEqual(await privateStore.get(['config','logs']),{});await privateStore.set({config:{enabled:false},logs:[2],states:{x:1},tests:{ok:true}});assert.deepEqual((await regular.get(['config','logs'])),local);assert.equal(session['jose:incognito:config'].enabled,false);await regular.set({config:{enabled:true,store:'normal'}});assert.deepEqual((await privateStore.get(['config'])).config,{enabled:false});});
 test('private context does not fall back to persistent storage if session unavailable',()=>{assert.throws(()=>contextStore({storage:{local:area({})}},true),/indisponível/);});
@@ -18,4 +18,10 @@ test('dashboard opener reuses and focuses the private dashboard in its own windo
  const f=fixture({tabs:[{id:9,windowId:20,incognito:true,url:'chrome-extension://jose/options.html'}]}),updates=[];
  f.chrome.tabs.update=async(id,props)=>updates.push({tab:id,props});f.chrome.windows.update=async(id,props)=>updates.push({window:id,props});
  const r=await openContextPages(f.chrome,true,['chrome-extension://jose/options.html'],{},true);assert.equal(r.reused,1);assert.deepEqual(updates,[{tab:9,props:{active:true}},{window:20,props:{focused:true}}]);
+});
+
+test('closed Portal tab recovers only the unique delivery tab in the same environment',async()=>{const f=fixture({tabs:[{id:7,incognito:true,url:LOGIN_PAGES[1]},{id:8,incognito:false,url:LOGIN_PAGES[1]}]});const r=await resolvePortalTab(f.chrome,true,{tabId:99});assert.equal(r.tab.id,7);assert.equal(r.recovered,true);});
+test('Portal recovery refuses ambiguity, absence and cross-environment binding',async()=>{
+ const f=fixture({tabs:[{id:7,incognito:true,url:LOGIN_PAGES[1]},{id:8,incognito:true,url:LOGIN_PAGES[1]},{id:9,incognito:false,url:LOGIN_PAGES[1]}]});
+ await assert.rejects(resolvePortalTab(f.chrome,true,{tabId:99}),/mais de uma aba/);await assert.rejects(resolvePortalTab(f.chrome,true,{tabId:9}),/outro ambiente/);f.tabs.splice(0,2);await assert.rejects(resolvePortalTab(f.chrome,true,{tabId:99}),/foi fechada/);
 });

@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.4
+# José — Tempo e taxa Saipos/iFood · v0.9.5
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -127,7 +127,7 @@ npm test
 npm run check
 ```
 
-116 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+121 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
 
 ## Vincular as duas abas em um clique
 
@@ -191,3 +191,13 @@ As capturas do usuário mostraram o formulário em Execução/Monitorar marcado,
 - Ativação sem nenhuma loja habilitada é rejeitada. O botão Iniciar habilita a loja selecionada; salvamento comum não habilita destinos ocultamente.
 
 Testes cobrem os fluxos da interface e do executor com APIs simuladas. A instalação atualizada ainda precisa ser conferida no computador da loja. Não houve alteração real de tempo ou taxa durante o desenvolvimento.
+
+## Correção 0.9.5 — recuperar aba iFood fechada
+
+O diagnóstico enviado mostrou sucesso na última leitura Saipos e erro No tab with id para o ID iFood anteriormente vinculado. A pré-leitura do Portal só buscava nova aba quando não havia ID cadastrado; um ID inteiro de aba já fechada bloqueava o ciclo antes da recuperação existente no executor.
+
+A leitura agora verifica se a aba vinculada ainda existe e está na tela de entrega. Quando necessário, procura uma única aba de Entrega no mesmo ambiente normal/anônimo, confere nome e tabela e só então atualiza o vínculo. Preserva modo, ativação e parâmetros. Não abre seletor de lojas, não faz login, não cria comandos de alteração durante a recuperação e não aceita uma loja diferente. Sem candidatos ou com ambiguidade, mostra a ação necessária.
+
+Exportar diagnóstico agora inclui versão, ambiente, ativação/modo efetivamente salvos, parâmetros da loja escolhida, faixas, estado do último ciclo, leitura resumida da fonte, existência de envio pendente e últimos 20 registros da loja, além dos testes de conexão. Não inclui credenciais nem copia os cartões brutos da última leitura para o relatório. Isso permite identificar bloqueios de execução sem confundir teste de conexão com estado de monitoramento.
+
+Após atualizar, abrir Entrega da loja correta no mesmo ambiente e iniciar o monitoramento no horário configurado. Uma única aba válida pode ser reconectada automaticamente. A instalação real e o salvamento iFood continuam pendentes de homologação; os testes não alteraram prazos/taxas reais.

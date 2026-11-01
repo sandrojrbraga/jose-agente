@@ -1,5 +1,5 @@
 import {chooseSaipos,linkReadings} from './link-report.mjs';
-import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES} from './context.mjs';
+import {contextStore,contextTabs,ownedTab,openContextPages,LOGIN_PAGES,resolvePortalTab} from './context.mjs';
 import {defaults,migrate,validate,inSchedule,demand,adjustment,stepRows,plan} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
 const incognito=!!chrome.extension?.inIncognitoContext;
@@ -54,14 +54,11 @@ async function readPortal(c){
   const start=Date.now(),target=c.targets.find(t=>t.id===c.profile.targetId);let tabId=target?.tabId;
   try{
     if(!target)throw Error('Cadastre a loja deste perfil.');
-    if(!Number.isInteger(tabId)){
-      const tabs=await queryTabs({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
-      if(tabs.length!==1)throw Error('Vincule uma única aba iFood em Cadastro.');
-      tabId=tabs[0].id;
-    }
+    const resolved=await resolvePortalTab(chrome,incognito,target);tabId=resolved.tab.id;
     const snapshot=await send(tabId,{type:'JOSE_INSPECT'});
     const r=auditIfood(snapshot,target,null,c);
-    const result={...r,targetId:target.id,tabId,latencyMs:Date.now()-start};
+    if(resolved.recovered){await bind('targets',target.id,tabId);target.tabId=tabId;await log({storeId:target.id,type:'reconnected',site:'ifood',previousTabId:resolved.previousTabId,tabId});}
+    const result={...r,targetId:target.id,tabId,reconnected:resolved.recovered,latencyMs:Date.now()-start};
     await storage.set({portal:result});return result;
   }catch(e){const result={ok:false,error:e.message,readAt:Date.now(),targetId:target?.id,tabId,latencyMs:Date.now()-start};await storage.set({portal:result});return result;}
 }

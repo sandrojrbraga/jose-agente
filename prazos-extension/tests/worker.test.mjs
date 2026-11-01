@@ -9,7 +9,7 @@ globalThis.chrome={
   alarms:{create:async(...a)=>alarms.push(a),onAlarm:{addListener(){}}},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
   scripting:{executeScript:async m=>{injections.push(m);disconnected=false;legacyIfood=false;}},
-  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async()=>{},sendMessage:async(id,m)=>{
+  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};const found=inventory.find(t=>t.id===id);if(found)return {...found,status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async()=>{},sendMessage:async(id,m)=>{
     messages.push(m);if(disconnected)throw Error('Receiving end does not exist.');
     if(m.type==='JOSE_EXECUTE'&&executionPortClosed)throw Error('The message port closed before a response was received.');
     if(m.type==='SAIPOS_READ')return {readerVersion:4,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
@@ -94,4 +94,11 @@ test('successful relink replaces obsolete Saipos failure with fresh successful d
 });
 test('activation with no enabled store fails explicitly instead of accepting an inert monitor',async()=>{
  setup();store.config.targets.forEach(t=>t.enabled=false);const r=await call({type:'SAVE',config:store.config});assert.match(r.error,/Habilite a loja/);
+});
+
+test('closed Portal ID is replaced after validating current store, without pausing or writing',async()=>{
+ setup('live');store.config.targets[0].tabId=999;inventory=[{id:7,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,true);assert.equal(r.reconnected,true);assert.equal(store.config.targets[0].tabId,7);assert.equal(store.config.enabled,true);assert.equal(store.config.mode,'live');assert.ok(messages.every(m=>m.type==='JOSE_INSPECT'));assert.equal(store.logs[0].type,'reconnected');
+});
+test('wrong store cannot be persisted as recovered Portal binding',async()=>{
+ setup();store.config.targets[0].tabId=999;store.config.targets[0].name='Pizza Pizza - Parangaba';inventory=[{id:7,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,false);assert.match(r.error,/Loja diferente/);assert.equal(store.config.targets[0].tabId,999);
 });

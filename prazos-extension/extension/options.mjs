@@ -1,3 +1,4 @@
+import {diagnosticReport} from './export-diagnostics.mjs';
 import {connection,comparisonRows} from './view.mjs';
 import {defaults,migrate,validate,inSchedule} from './core.mjs';
 const $=id=>document.getElementById(id), el=(tag,txt)=>{const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;return e;};
@@ -187,7 +188,7 @@ for(const [id,type] of [['testSaipos','TEST_SAIPOS'],['testIfood','TEST_IFOOD']]
   $(id).disabled=true;message('Lendo os vínculos salvos, sem alterar dados...');
   try{const r=await call({type,targetId:config.profile.targetId});if(r.error&&!('ok' in r))throw Error(r.error);showTests(await call({type:'TEST_RESULTS'}));message(r.ok?'Leitura concluída.':r.error,!r.ok);await refresh();}finally{$(id).disabled=false;}
 });
-$('exportTests').onclick=()=>action(async()=>{const d=await call({type:'STATE'}),tests={...await call({type:'TEST_RESULTS'})};if(d.portal)tests.ifood=d.portal;const u=URL.createObjectURL(new Blob([JSON.stringify(tests,null,2)],{type:'application/json'})),a=el('a');a.href=u;a.download='jose-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
+$('exportTests').onclick=()=>action(async()=>{const d=await call({type:'STATE'}),tests=await call({type:'TEST_RESULTS'}),report=diagnosticReport(d,tests,chrome.runtime.getManifest().version);const u=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'})),a=el('a');a.href=u;a.download='jose-diagnostico.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('discover').onclick=()=>action(async()=>{
   message('Reconectando leitores e identificando cozinhas...');
   const r=await call({type:'DISCOVER'});if(r.error)throw Error(r.error);
