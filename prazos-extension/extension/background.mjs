@@ -19,7 +19,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===8)&&(m.type!=='SAIPOS_READ'||r.readerVersion===4))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===9)&&(m.type!=='SAIPOS_READ'||r.readerVersion===4))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -27,7 +27,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==8)||(m.type==='SAIPOS_READ'&&r.readerVersion!==4))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==9)||(m.type==='SAIPOS_READ'&&r.readerVersion!==4))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){

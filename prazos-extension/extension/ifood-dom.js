@@ -1,6 +1,10 @@
 // Seletores conferidos no Portal em 01/11/2026. Ícones CSS não são texto.
 (() => {
-  const visible=e=>!!e&&e.getClientRects().length>0;
+  const visible=e=>{
+    if(!e||!e.getClientRects().length)return false;
+    if(typeof getComputedStyle!=='function')return true;
+    const s=getComputedStyle(e);return s.visibility!=='hidden'&&s.visibility!=='collapse'&&s.display!=='none'&&s.opacity!=='0';
+  };
   const clean=s=>String(s||'').replace(/[\ue000-\uf8ff]/g,'').trim().replace(/\s+/g,' ');
   function header(doc){
     const primary=doc.querySelector('[data-testid="status-indicator-v2"]');
@@ -15,5 +19,5 @@
     const label=element.querySelector('[data-testid="restaurant-profile-name"]');
     return clean(label?(label.innerText||label.textContent):(element.innerText||element.textContent));
   }
-  window.JoseIfoodDom={header,name};
+  window.JoseIfoodDom={header,name,visible};
 })();

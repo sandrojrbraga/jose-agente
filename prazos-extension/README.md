@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.9.7
+# José — Tempo e taxa Saipos/iFood · v0.9.8
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -225,3 +225,14 @@ Os diagnósticos da operação demonstraram uma alteração confirmada por recar
 - Diagnóstico inclui estágio, horário e erro da conferência, valores antes/esperados e estado do envio, sem credenciais ou cartões brutos.
 
 Atualize os arquivos e recarregue a mesma extensão sem remover a instalação. Atualização pausa o monitoramento. No ambiente normal, os parâmetros e pendências permanecem. Se houver envio pendente, revalide primeiro; se não puder confirmar, mantenha pausado e confira o Portal. Somente depois inicie o monitoramento. Os testes são simulados; a homologação de operação contínua na loja permanece pendente.
+
+
+## Correção 0.9.8 — menu da loja e janelas ocultas
+
+Na inspeção somente de leitura do Portal em 01/11/2026, o menu de status da Maraponga estava aberto sobre a tela Tempo e taxa, com Salvar habilitado. O Portal mantém vários diálogos fechados no DOM: eles possuem retângulos de layout, mas visibility:hidden e opacity:0. O leitor anterior usava apenas getClientRects, confundindo presença no layout com visibilidade.
+
+O leitor agora considera visibility/display/opacity. Antes de abrir o seletor de ID, fecha um menu de status já aberto pelo fundo específico desse menu, sem salvar, cancelar campos ou trocar loja. Depois de selecionar o mesmo ID, fecha novamente o menu caso ele permaneça aberto e exige que não haja diálogo visível antes de preencher ou salvar. Outra janela/modal desconhecida causa interrupção antes dos efeitos. O tratamento de erro não clica Cancelar se houver diálogo aberto.
+
+A verificação do ID continua em cada execução; não foi removida em favor de confiar apenas no nome. Inspeção e revalidação continuam sem cliques no seletor. Protocolo iFood 9 força a atualização do leitor nas abas antigas.
+
+Testes simulam diálogo com visibility:hidden mas retângulo de layout, menu remanescente após selecionar ID, menu aberto no início do ciclo, fundo ausente e janela desconhecida. Não foram alterados tempos ou taxas no Portal durante esta inspeção. A correção de DOM ainda precisa de validação instalada com ciclos consecutivos. Atualizar a mesma instalação sem remover; atualização pausa a operação e preserva dados normais.
