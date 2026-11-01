@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.5.0
+# José — Tempo e taxa Saipos/iFood · v0.6.0
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -14,7 +14,7 @@ O papel padrão “Saipos + iFood neste perfil” executa o fluxo local. O papel
 
 1. Extrair o ZIP do projeto. A pasta para carregar é `prazos-extension/extension`, que contém manifest.json.
 2. Em chrome://extensions, ativar modo desenvolvedor e carregar sem compactação. Se já instalado, substituir os arquivos da pasta instalada e clicar **Recarregar**. Não manter duas versões ativas. Carregar outra pasta pode criar outro ID e outro armazenamento.
-3. Recarregar Saipos e iFood, fechar a configuração antiga e abrir o painel pelo ícone José. A atualização de configurações anteriores preserva bases personalizadas, adiciona os novos campos e pausa em simulação. Maraponga é a loja inicial quando não há escolha de perfil anterior.
+3. Recarregar Saipos e iFood, fechar a configuração antiga e abrir o painel pelo ícone José. A atualização de configurações anteriores preserva bases e patamares personalizados, adiciona os novos campos e pausa em simulação. A fórmula anterior fica marcada como Idade + patamar, para não mudar o cálculo silenciosamente. Escolher explicitamente o novo modo desejado e revisar antes de salvar. Maraponga é a loja inicial quando não há escolha de perfil anterior.
 4. Escolher a loja do perfil e vincular a cozinha e as duas abas. P8 já tem ID Saipos 65416, ligado a Maraponga/Jardim Cearense/Parangaba. As demais cozinhas aguardam os IDs corretos.
 5. Executar os dois testes de leitura antes de ativar. Falhas podem ser exportadas em **Exportar diagnóstico**.
 
@@ -30,7 +30,21 @@ O painel mostra apenas a loja escolhida para o perfil, com tabelas editáveis:
 
 O patamar mais alto atingido determina os acréscimos. Os patamares **não se somam**:
 
-`Tempo = base da faixa + idade do pedido mais antigo em Cozinha + acréscimo do patamar`
+O campo **Como calcular o preparo** permite:
+
+| Modo | Preparo usado |
+|---|---|
+| Tempo do pedido mais antigo em Cozinha | Idade do pedido há mais tempo na coluna Cozinha. Ignora os minutos dos patamares. |
+| Quantidade de pedidos · usar patamares | Minutos do patamar de quantidade alcançado. Não soma a idade dos pedidos. |
+| Idade + patamar · fórmula anterior | Soma ambos, preservada explicitamente para configurações anteriores. |
+
+No modo por quantidade, escolher **Pedidos em Cozinha** ou **Cozinha + Aguardando entrega** em Volume usado nos patamares. Configurar pelo menos um patamar com minutos de preparo; abaixo do primeiro patamar o preparo por quantidade é zero. Isso é uma tabela configurável de capacidade, não multiplicação automática pela quantidade de pizzas.
+
+O campo **Tempo de entrega** permite usar **Por faixa de km** ou **Tempo médio único para todas as faixas**. O tempo médio é informado manualmente em minutos; não é estimado automaticamente a partir do histórico de entregas. Quando selecionado, vale para todos os raios. As bases por km ficam guardadas para voltar ao modo por faixa; as taxas por km continuam independentes.
+
+`Prazo = preparo do modo escolhido + tempo de entrega escolhido`
+
+Exemplos ilustrativos: pedido mais antigo com 30 min + entrega de 15 min = **45 min**. Modo quantidade, patamar de 10 pedidos com 20 min de preparo + entrega de 15 min = **35 min**, sem somar os 30 min do pedido. A subida aplica o novo cálculo no ciclo válido; a descida respeita os passos e leituras de redução configurados.
 
 `Taxa por demanda = taxa-base da faixa + acréscimo do patamar`
 
@@ -38,7 +52,7 @@ Exemplo apenas ilustrativo, não pré-configurado: base R$6,99; patamar de 10 pe
 
 Aumentos são imediatos no ciclo válido. Reduções precisam de duas ou mais leituras consecutivas, com passos independentes para tempo e taxa, até voltar exatamente à base. A leitura inválida mantém o último ajuste confirmado e reinicia as contagens de redução. Valores não acumulam sobre o preço/prazo atual do Portal. O monitor não pausa a loja.
 
-**Confirmar a semântica de “Tempo” antes de habilitar a escrita:** a fórmula pressupõe prazo total, sem duplicar um preparo já somado por outro mecanismo. A idade não é multiplicada pela quantidade de pizzas. “Ler faixas atuais do Portal” importa o que está exibido; se já houver reajuste, corrigir a base antes de salvar.
+**Confirmar a semântica de “Tempo” antes de habilitar a escrita:** o cálculo escolhido pressupõe prazo total, sem duplicar um preparo já somado por outro mecanismo. A idade não é multiplicada pela quantidade de pizzas. O tempo usado é o decorrido desde a entrada em Cozinha, e não o pedido mais recente. “Ler faixas atuais do Portal” importa o que está exibido; se já houver reajuste, corrigir a base antes de salvar.
 
 ## Painel e horário
 
@@ -94,4 +108,4 @@ npm test
 npm run check
 ```
 
-Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.
+70 testes automatizados passaram nesta versão. Testes de cálculo, DOM simulado, leitura, migração, isolamento por perfil, teto, redução gradual, recuperação e atualização do protocolo. Não substituem homologação com as sessões reais: testar leitura, simulação, preenchimento React, salvamento e persistência na instalação atualizada. Nenhum prazo ou taxa real foi alterado durante o desenvolvimento desta versão. O navegador automatizado não pode inspecionar páginas chrome-extension://; não foi contornado esse bloqueio.

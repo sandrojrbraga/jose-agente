@@ -95,7 +95,7 @@ async function tick(manual=false){
         const calc=adjustment(t,source,st,c),{next,rows,productionMinutes:desired}=calc;
         if(c.mode==='simulate'){
           // Simulação não muda o Portal nem o estado de execução real.
-          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows});continue;
+          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows});continue;
         }
         if(!(await get()).config.enabled||!inSchedule(Date.now(),c))break;
         let bound;try{bound=await chrome.tabs.get(t.tabId);}catch{}
@@ -115,7 +115,7 @@ async function tick(manual=false){
         if(!r.unchanged){const check=await verifyReload(t,r.expected);if(!check.ok)throw Error(check.error||'Prazo não confirmado após recarga.');}
         await readPortal(c);
         states[key]={...next};
-        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true,changed:!r.unchanged});
+        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true,changed:!r.unchanged});
         await log({storeId:t.id,type:r.unchanged?'unchanged':'saved',jobId:job.id,before:r.before,after:r.expected});
       }catch(e){if(states[key]){states[key].lowerCount=0;states[key].feeLowerCount=0;}results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
       await chrome.storage.local.set({states});

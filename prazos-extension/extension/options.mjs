@@ -29,32 +29,38 @@ function draw(){
     select(registration,'Cozinha que alimenta esta loja',t.sourceId,[['','Escolha a cozinha — vínculo pendente'],...config.sources.map(s=>[s.id,s.name])],v=>t.sourceId=v);
     select(registration,'Aba Configurações de entrega',t.tabId,tabChoices('https://portal.ifood.com.br/'),v=>t.tabId=v?Number(v):null);
     $('registration').append(registration);
+    select(grid,'Como calcular o preparo',t.timeMode,[['oldest','Tempo do pedido mais antigo em Cozinha'],['volume','Quantidade de pedidos · usar patamares'],['combined','Idade + patamar · fórmula anterior']],v=>{t.timeMode=v;draw();});
+    select(grid,'Tempo de entrega',t.deliveryMode,[['bands','Por faixa de km · tabela abaixo'],['average','Tempo médio único para todas as faixas']],v=>{t.deliveryMode=v;draw();});
+    const average=field(grid,'Tempo médio de entrega (min)',t.averageDeliveryMinutes,v=>{t.averageDeliveryMinutes=v;draw();},'number');average.min=1;average.step=1;average.disabled=t.deliveryMode!=='average';
     field(grid,'Limite máximo de prazo (min)',t.maxMinutes,v=>t.maxMinutes=v,'number');
     select(grid,'Taxas',t.feeMode,[['preserve','Preservar taxa existente'],['configured','Taxa-base fixa por km'],['demand','Taxa-base + acréscimo por volume']],v=>t.feeMode=v);
     field(grid,'Teto da taxa por faixa (R$)',t.maxFee,v=>t.maxFee=v,'number').step='0.01';
     field(grid,'Redução da taxa por etapa (R$)',t.decreaseStepFee,v=>t.decreaseStepFee=v,'number').step='0.01';
     select(grid,'Volume usado nos patamares',t.volumeMetric,[['kitchen','Pedidos em Cozinha'],['waiting','Cozinha + Aguardando entrega']],v=>t.volumeMetric=v);
-    card.append(grid);field(card,'Habilitar este destino',t.enabled,v=>t.enabled=v,'checkbox');
-    field(card,'Confirmei que Tempo é o prazo total e que base + produção não duplica o preparo',t.semanticsConfirmed,v=>t.semanticsConfirmed=v,'checkbox');
-    card.append(el('h3','Tabela-base por distância'));
+    card.append(grid);
+    const formula=t.timeMode==='oldest'?'Preparo = idade do pedido mais antigo em Cozinha. Os minutos dos patamares não entram no prazo.':t.timeMode==='volume'?'Preparo = minutos do patamar alcançado pela quantidade. A idade dos pedidos não é somada.':'Preparo = idade do pedido mais antigo + minutos do patamar. Fórmula anterior mantida para revisão.';
+    card.append(el('p',formula+' Prazo final = preparo + '+(t.deliveryMode==='average'?t.averageDeliveryMinutes+' min de entrega em todas as faixas.':'tempo de entrega de cada faixa de km.')));
+    field(card,'Habilitar este destino',t.enabled,v=>t.enabled=v,'checkbox');
+    field(card,'Confirmei que Tempo é o prazo total e que entrega + preparo não duplica outro ajuste',t.semanticsConfirmed,v=>t.semanticsConfirmed=v,'checkbox');
+    card.append(el('h3','Entrega e taxa-base por distância'));
     card.append(el('p','Informe todas as faixas do Portal. Km é o limite superior de cada faixa. Os acréscimos serão somados à base abaixo.'));
-    const table=el('table'),head=el('tr');for(const title of ['Até km','Tempo-base (min)','Taxa-base (R$)',''])head.append(el('th',title));table.append(head);
+    const table=el('table'),head=el('tr');for(const title of ['Até km','Entrega (min)','Taxa-base (R$)',''])head.append(el('th',title));table.append(head);
     t.bands.forEach((b,i)=>{const row=el('tr');
       for(const [key,label,step] of [['km','Km','0.1'],['minutes','Minutos','1'],['fee','Taxa','0.01']]){
-        const td=el('td'),input=el('input');input.type='number';input.step=step;input.min=key==='fee'?'0':key==='km'?'0.1':'1';input.value=b[key]??'';input.setAttribute('aria-label',`${label} da faixa ${i+1}`);
+        const td=el('td'),input=el('input');input.type='number';input.step=step;input.min=key==='fee'?'0':key==='km'?'0.1':'1';input.value=key==='minutes'&&t.deliveryMode==='average'?t.averageDeliveryMinutes:b[key]??'';input.setAttribute('aria-label',`${label} da faixa ${i+1}`);if(key==='minutes'&&t.deliveryMode==='average'){input.disabled=true;input.title='Usando o tempo médio único acima; este valor fica guardado para o modo por km.';}
         input.onchange=()=>{b[key]=key==='fee'&&input.value===''?null:Number(input.value);};td.append(input);row.append(td);
       }
       const td=el('td'),remove=el('button','Remover');remove.onclick=()=>{t.bands.splice(i,1);draw();};td.append(remove);row.append(td);table.append(row);
     });card.append(table);
     const addBand=el('button','Adicionar faixa de km');addBand.onclick=()=>{const last=t.bands.at(-1);t.bands.push({km:(last?.km||0)+0.5,minutes:last?.minutes||15,fee:last?.fee??null});draw();};card.append(addBand);
     card.append(el('h3','Patamares de demanda'));
-    card.append(el('p','Ao atingir X pedidos, aplica o patamar mais alto alcançado. Cada acréscimo é total sobre a base; os patamares não se somam. Sem patamares, só a idade do pedido mais antigo ajusta o prazo.'));
-    const rules=el('table'),rh=el('tr');for(const title of ['A partir de X pedidos','+ Tempo (min)','+ Taxa (R$)',''])rh.append(el('th',title));rules.append(rh);
+    card.append(el('p','Ao atingir X pedidos, aplica o patamar mais alto alcançado. Cada acréscimo é total sobre a base; os patamares não se somam. No modo por quantidade, os minutos representam o preparo estimado. No modo pedido mais antigo, esses minutos são ignorados e a taxa pode continuar seguindo o volume.'));
+    const rules=el('table'),rh=el('tr');for(const title of ['A partir de X pedidos',t.timeMode==='oldest'?'Minutos · não usados':t.timeMode==='volume'?'Preparo estimado (min)':'Acréscimo de preparo (min)','+ Taxa (R$)',''])rh.append(el('th',title));rules.append(rh);
     t.volumeRules.forEach((r,i)=>{const row=el('tr');for(const [key,label,step] of [['minOrders','Volume','1'],['extraMinutes','Acréscimo de tempo','1'],['extraFee','Acréscimo de taxa','0.01']]){
-      const td=el('td'),input=el('input');input.type='number';input.step=step;input.min=key==='minOrders'?'1':'0';input.value=r[key];input.setAttribute('aria-label',`${label} do patamar ${i+1}`);input.onchange=()=>r[key]=Number(input.value);td.append(input);row.append(td);
+      const td=el('td'),input=el('input');input.type='number';input.step=step;input.min=key==='minOrders'?'1':'0';input.value=r[key];input.setAttribute('aria-label',`${label} do patamar ${i+1}`);if(key==='extraMinutes'&&t.timeMode==='oldest')input.disabled=true;input.onchange=()=>r[key]=Number(input.value);td.append(input);row.append(td);
     }const td=el('td'),remove=el('button','Remover');remove.onclick=()=>{t.volumeRules.splice(i,1);draw();};td.append(remove);row.append(td);rules.append(row);});card.append(rules);
     const addRule=el('button','Adicionar patamar');addRule.onclick=()=>{const last=t.volumeRules.at(-1);t.volumeRules.push({minOrders:(last?.minOrders||0)+1,extraMinutes:last?.extraMinutes||0,extraFee:last?.extraFee||0});draw();};card.append(addRule);
-    card.append(el('p','Taxa por demanda exige taxas-base e pelo menos um patamar. A volta à base usa leituras consecutivas e passos de redução; leitura inválida interrompe a redução. Não pausa a loja.'));
+    card.append(el('p','Taxa por demanda exige taxas-base e pelo menos um patamar. Abaixo do primeiro patamar, o preparo por quantidade é zero. A volta à base usa leituras consecutivas e passos de redução; leitura inválida interrompe a redução. Não pausa a loja.'));
     const actions=el('div');actions.className='actions';
     const read=el('button','Ler faixas atuais do Portal');read.onclick=async()=>{read.disabled=true;try{const r=await call({type:'READ_PORTAL',target:t});if(r.error)throw Error(r.error);if(confirm('Usar os prazos atuais como tabela-base? Se já houver acréscimo de demanda, ele também será importado.')){t.bands=r.rows;draw();message('Tabela importada no formulário. Revise a base e salve.');}}catch(e){message(e.message,true);}finally{read.disabled=false;}};
     const remove=el('button','Remover destino');remove.onclick=()=>{config.targets=config.targets.filter(x=>x!==t);draw();};actions.append(read,remove);card.append(actions);$('targets').append(card);
@@ -119,7 +125,7 @@ async function updatePortal(){
 async function refresh(){
   const d=await call({type:'STATE'});renderOverview(d);$('status').replaceChildren();
   const p=el('p',d.status.at?`${new Date(d.status.at).toLocaleString('pt-BR')} · ${d.status.message}`:'Nenhum ciclo executado.');$('status').append(p);
-  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':r.changed?'ALTERAÇÃO CONFIRMADA':'JÁ ESTAVA CORRETO'} · produção: ${r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`));
+  for(const r of d.status.results||[]){const c=el('div');c.className='card';c.append(el('strong',`${r.name} · ${r.id}`));c.append(el('p',r.error||`${r.mode==='simulate'?'SIMULAÇÃO':r.changed?'ALTERAÇÃO CONFIRMADA':'JÁ ESTAVA CORRETO'} · pedido mais antigo: ${r.productionMinutes} min · preparo aplicado: ${r.preparationMinutes??r.productionMinutes} min · volume: ${r.volume??'—'} · patamar: ${r.threshold??'base'} · acréscimo de taxa: R$ ${(r.feeExtra||0).toFixed(2)}`));
     if(r.rows)c.append(el('pre',r.rows.map(b=>`${b.km} km → ${b.minutes} min${b.fee!==null?' · R$ '+b.fee.toFixed(2):''}`).join('\n')));$('status').append(c);}
   $('logs').textContent=JSON.stringify(d.logs,null,2);
   showTests(await call({type:'TEST_RESULTS'}));
@@ -133,7 +139,7 @@ $('tick').onclick=()=>action(async()=>{message('Consultando a configuração SAL
 $('verify').onclick=()=>action(async()=>{const r=await call({type:'REVERIFY'});if(r.error)throw Error(r.error);message(`${r.count} envio(s) revalidado(s), sem reenvio.`);await refresh();});
 $('refresh').onclick=()=>action(async()=>{tabs=await call({type:'TABS'});draw();await refresh();});
 $('addSource').onclick=()=>{config.sources.push({id:'cozinha-'+(config.sources.length+1),name:'Nova cozinha',storeId:'',tabId:null});draw();};
-$('addTarget').onclick=()=>{config.targets.push({id:'',name:'',sourceId:config.sources[0]?.id,enabled:false,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,bands:[{km:0.5,minutes:15,fee:null}]});draw();};
+$('addTarget').onclick=()=>{config.targets.push({id:'',name:'',sourceId:config.sources[0]?.id,enabled:false,tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',timeMode:'oldest',deliveryMode:'bands',averageDeliveryMinutes:15,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,bands:[{km:0.5,minutes:15,fee:null}]});draw();};
 $('export').onclick=()=>action(async()=>{const c=readForm();const blob=new Blob([JSON.stringify(c,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=el('a');a.href=u;a.download='jose-configuracao.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);});
 $('import').onchange=()=>action(async()=>{const f=$('import').files[0];if(!f)return;if(f.size>200000)throw Error('Arquivo grande demais.');config=validate(migrate(JSON.parse(await f.text())));config.enabled=false;config.mode='simulate';config.targets.forEach(t=>t.tabId=null);config.sources.forEach(s=>s.tabId=null);loadForm();message('Configuração carregada em simulação e pausada. Vincule as abas e salve.');});
 for(const [id,type] of [['testSaipos','TEST_SAIPOS'],['testIfood','TEST_IFOOD']])$(id).onclick=()=>action(async()=>{

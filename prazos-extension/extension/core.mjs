@@ -1,4 +1,4 @@
-export const VERSION = 4;
+export const VERSION = 5;
 export const STORE_CATALOG = [
  ['3469536','Pizza Pizza Aquiraz'],
  ['3450370','Pizza Pizza - Jardim Cearense','p8'],
@@ -18,18 +18,18 @@ export const defaults = () => ({
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
   targets: STORE_CATALOG.map(([id,name,sourceId])=>({id,name,sourceId:sourceId||'',
-    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
+    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',timeMode:'oldest',deliveryMode:'bands',averageDeliveryMinutes:15,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
     bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,fee:null}))}))
 });
 export function migrate(old){
   if(!old)return defaults();
   if(old.version===VERSION)return old;
-  if(![1,2,3].includes(old.version))throw Error('Versão de configuração desconhecida.');
+  if(![1,2,3,4].includes(old.version))throw Error('Versão de configuração desconhecida.');
   const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
   const fresh=defaults().targets;
   c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
   c.profile={...defaults().profile,...old.profile,targetId:old.profile?.targetId||'3148479'};
-  c.targets.forEach(t=>{t.id=String(t.id);t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
+  c.targets.forEach(t=>{t.id=String(t.id);t.timeMode=old.targets?.find(o=>String(o.id)===t.id)?.timeMode||'combined';t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
   return c;
 }
 
@@ -61,6 +61,9 @@ export function validate(c) {
     if(typeof t.enabled!=='boolean'||typeof t.semanticsConfirmed!=='boolean') fail('Validação do destino inválida.');
     if(t.tabId!==null&&!Number.isInteger(t.tabId)) fail('Aba iFood inválida.');
     if(!['preserve','configured','demand'].includes(t.feeMode)) fail('Modo da taxa inválido.');
+    if(!['oldest','volume','combined'].includes(t.timeMode))fail('Escolha o cálculo por idade ou quantidade.');
+    if(!['bands','average'].includes(t.deliveryMode))fail('Base de entrega inválida.');
+    if(t.deliveryMode==='average'){finite(t.averageDeliveryMinutes,1,t.maxMinutes,'Tempo médio de entrega fora do limite.');if(!Number.isInteger(t.averageDeliveryMinutes))fail('Tempo médio de entrega deve usar minutos inteiros.');}
     if(!['kitchen','waiting'].includes(t.volumeMetric))fail('Métrica de volume inválida.');
     finite(t.maxFee,0,1000,'Teto da taxa inválido.');
     finite(t.decreaseStepFee,0.01,1000,'Passo de redução da taxa inválido.');
@@ -73,12 +76,13 @@ export function validate(c) {
       if(!cents(r.extraFee))fail('Use até duas casas decimais no acréscimo da taxa.');
       threshold=r.minOrders;extraMinutes=r.extraMinutes;extraFee=r.extraFee;
     }
+    if(t.timeMode==='volume'&&!t.volumeRules.some(r=>r.extraMinutes>0))fail('Defina os minutos de preparo nos patamares por quantidade.');
     if(t.feeMode==='demand'&&!t.volumeRules.length)fail('Cadastre ao menos um patamar para taxa por demanda.');
     finite(t.maxMinutes,1,1440,'Limite de prazo inválido.');
     if(!Number.isInteger(t.maxMinutes)||!Array.isArray(t.bands)||!t.bands.length) fail('Faixas ou limite inválidos.');
     let km=0;
     for(const b of t.bands) {
-      finite(b.km,0.1,100,'Raio inválido.'); finite(b.minutes,1,t.maxMinutes,'Tempo-base fora do limite.');
+      finite(b.km,0.1,100,'Raio inválido.'); finite(b.minutes,1,t.deliveryMode==='average'?1440:t.maxMinutes,'Tempo-base fora do limite.');
       if(b.km<=km||!Number.isInteger(b.minutes)) fail('Ordene os raios e use minutos inteiros.');
       km=b.km;
       if(b.fee!==null){finite(b.fee,0,1000,'Taxa inválida.');if(!cents(b.fee))fail('Use até duas casas decimais na taxa-base.');}
@@ -137,7 +141,7 @@ export function nextOffset(desired,state,c) {
   return {offset:Math.max(desired,previous-c.decreaseStepMinutes),lowerCount:0};
 }
 export function plan(target,offset,feeOffset=0) {
-  const rows=target.bands.map(b=>({...b,minutes:b.minutes+offset,fee:target.feeMode==='preserve'?null:target.feeMode==='demand'?Math.round((b.fee+feeOffset)*100)/100:b.fee}));
+  const rows=target.bands.map(b=>({...b,minutes:deliveryMinutes(target,b)+offset,fee:target.feeMode==='preserve'?null:target.feeMode==='demand'?Math.round((b.fee+feeOffset)*100)/100:b.fee}));
   if(target.feeMode==='demand'&&rows.some(b=>b.fee>target.maxFee))fail('Taxa calculada supera o teto da loja.');
   if(rows.some(b=>b.minutes>target.maxMinutes)) fail('Demanda exige prazo acima do limite configurado. Intervenção necessária; prazo mantido.');
   return rows;
@@ -158,10 +162,21 @@ export function volumeRule(target,snapshot){
 }
 export function adjustment(target,snapshot,state,c,now=Date.now()){
   const productionMinutes=demand(snapshot,c,now),rule=volumeRule(target,snapshot);
-  const next=nextOffset(productionMinutes+rule.extraMinutes,state,c);
+  const desiredTime=timeContribution(target,productionMinutes,rule);
+  const next=nextOffset(desiredTime,state,c);
   const fee=nextOffset(Math.round((target.feeMode==='demand'?rule.extraFee:0)*100),
     {offset:state.feeOffsetCents,lowerCount:state.feeLowerCount},
     {...c,decreaseStepMinutes:Math.round(target.decreaseStepFee*100)});
   const nextState={...next,feeOffsetCents:fee.offset,feeLowerCount:fee.lowerCount};
-  return {next:nextState,rows:plan(target,next.offset,fee.offset/100),productionMinutes,...rule};
+  return {next:nextState,rows:plan(target,next.offset,fee.offset/100),productionMinutes,desiredTime,...rule};
+}
+
+export function deliveryMinutes(target,band){
+  return target.deliveryMode==='average'?target.averageDeliveryMinutes:band.minutes;
+}
+export function timeContribution(target,productionMinutes,rule){
+  if(target.timeMode==='oldest')return productionMinutes;
+  if(target.timeMode==='volume')return rule.extraMinutes;
+  if(target.timeMode==='combined')return productionMinutes+rule.extraMinutes;
+  fail('Modo de cálculo de tempo inválido.');
 }
