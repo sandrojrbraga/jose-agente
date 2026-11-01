@@ -1,7 +1,7 @@
 (() => {
-  if(window.joseIfoodVersion===6)return;
+  if(window.joseIfoodVersion===7)return;
   if(window.joseIfoodListener)chrome.runtime.onMessage.removeListener(window.joseIfoodListener);
-  window.joseIfoodVersion=6;
+  window.joseIfoodVersion=7;
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const visible=e=>!!e&&e.getClientRects().length>0;
   const text=e=>e.innerText.trim().replace(/\s+/g,' ');
@@ -64,6 +64,7 @@
     if(Date.now()>m.expiresAt)throw Error('Leitura venceu durante a seleção.');
     const expected=m.rows.map((b,i)=>({km:b.km,minutes:b.minutes,fee:m.target.feeMode!=='preserve'?b.fee:before[i].fee}));
     if(expected.some(b=>!Number.isInteger(b.minutes)||b.minutes<1||b.minutes>m.target.maxMinutes||!Number.isFinite(b.fee)||b.fee<0||(m.target.feeMode==='demand'&&b.fee>m.target.maxFee)))throw Error('Valores fora dos limites.');
+    if(Number.isInteger(m.target.adjustStepMinutes)&&expected.some((b,i)=>Math.abs(b.minutes-before[i].minutes)>m.target.adjustStepMinutes))throw Error('O tempo no Portal mudou desde a leitura. Aguarde novo cálculo para respeitar o passo por ciclo.');
     if(before.every((b,i)=>b.minutes===expected[i].minutes&&b.fee===expected[i].fee))return {ok:true,unchanged:true,storeId:m.target.id,expected};
     let submitted=false;
     try {
@@ -90,7 +91,7 @@
   const listener=(m,s,reply)=>{
     if(s.id!==chrome.runtime.id||!['JOSE_EXECUTE','JOSE_VERIFY','JOSE_READ','JOSE_INSPECT'].includes(m.type))return;
     (async()=>{
-      if(m.type==='JOSE_INSPECT')return {readerVersion:6,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
+      if(m.type==='JOSE_INSPECT')return {readerVersion:7,capturedAt:Date.now(),deliveryPage:location.pathname.includes('merchant-delivery-core-portal-experience'),name:storeName(),unsaved:!!button('Salvar')&&!button('Salvar').disabled,rows:publicRows(readRows())};
       if(m.type==='JOSE_READ'){checkHeader(m.target);const save=button('Salvar');if(save&&!save.disabled)throw Error('Há alterações não salvas no Portal.');return {ok:true,rows:publicRows(readRows())};}
       if(m.type==='JOSE_VERIFY'){
         checkHeader(m.target);

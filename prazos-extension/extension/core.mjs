@@ -1,4 +1,4 @@
-export const VERSION = 5;
+export const VERSION = 6;
 export const STORE_CATALOG = [
  ['3469536','Pizza Pizza Aquiraz'],
  ['3450370','Pizza Pizza - Jardim Cearense','p8'],
@@ -18,18 +18,18 @@ export const defaults = () => ({
   intervalSeconds: 30, staleSeconds: 90, decreaseReadings: 2, decreaseStepMinutes: 5,
   sources: [{id:'p8', name:'P8 — cozinha compartilhada', storeId:'65416', tabId:null}],
   targets: STORE_CATALOG.map(([id,name,sourceId])=>({id,name,sourceId:sourceId||'',
-    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',timeMode:'oldest',deliveryMode:'bands',averageDeliveryMinutes:15,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
-    bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,fee:null}))}))
+    enabled:id==='3148479',tabId:null,semanticsConfirmed:false,maxMinutes:120,feeMode:'preserve',timeMode:'oldest',deliveryMode:'distance',averageDeliveryMinutes:15,adjustStepMinutes:5,volumeMetric:'kitchen',volumeRules:[],maxFee:30,decreaseStepFee:1,
+    bands:[.5,1,1.5,2,2.5,3,3.5,4,5,6,7].map(km=>({km,minutes:15+(km/.5-1)*5,distanceMinutes:(km/.5-1)*5,fee:null}))}))
 });
 export function migrate(old){
   if(!old)return defaults();
   if(old.version===VERSION)return old;
-  if(![1,2,3,4].includes(old.version))throw Error('Versão de configuração desconhecida.');
+  if(![1,2,3,4,5].includes(old.version))throw Error('Versão de configuração desconhecida.');
   const c={...defaults(),...old,version:VERSION,enabled:false,mode:'simulate'};
   const fresh=defaults().targets;
   c.targets=[...fresh.map(t=>({...t,...old.targets?.find(o=>String(o.id)===t.id)})),...(old.targets||[]).filter(t=>!fresh.some(f=>f.id===String(t.id)))];
   c.profile={...defaults().profile,...old.profile,targetId:old.profile?.targetId||'3148479'};
-  c.targets.forEach(t=>{t.id=String(t.id);t.timeMode=old.targets?.find(o=>String(o.id)===t.id)?.timeMode||'combined';t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
+  c.targets.forEach(t=>{t.id=String(t.id);const previous=old.targets?.find(o=>String(o.id)===t.id);t.timeMode=previous?.timeMode==='volume'?'volume':'oldest';const base=previous?.deliveryMode==='average'?previous.averageDeliveryMinutes:Math.min(...t.bands.map(b=>b.minutes));t.averageDeliveryMinutes=base;t.bands=t.bands.map(b=>({...b,distanceMinutes:previous?.deliveryMode==='average'?0:b.minutes-base}));t.deliveryMode='distance';t.adjustStepMinutes=previous?.adjustStepMinutes||5;t.semanticsConfirmed=false;t.enabled=t.enabled&&t.id===c.profile.targetId;});
   return c;
 }
 
@@ -62,8 +62,9 @@ export function validate(c) {
     if(t.tabId!==null&&!Number.isInteger(t.tabId)) fail('Aba iFood inválida.');
     if(!['preserve','configured','demand'].includes(t.feeMode)) fail('Modo da taxa inválido.');
     if(!['oldest','volume','combined'].includes(t.timeMode))fail('Escolha o cálculo por idade ou quantidade.');
-    if(!['bands','average'].includes(t.deliveryMode))fail('Base de entrega inválida.');
-    if(t.deliveryMode==='average'){finite(t.averageDeliveryMinutes,1,t.maxMinutes,'Tempo médio de entrega fora do limite.');if(!Number.isInteger(t.averageDeliveryMinutes))fail('Tempo médio de entrega deve usar minutos inteiros.');}
+    if(!['bands','average','distance'].includes(t.deliveryMode))fail('Base de entrega inválida.');
+    finite(t.adjustStepMinutes,1,60,'Passo de ajuste inválido.');if(!Number.isInteger(t.adjustStepMinutes))fail('Passo de ajuste deve usar minutos inteiros.');
+    if(t.deliveryMode==='average'||t.deliveryMode==='distance'){finite(t.averageDeliveryMinutes,1,t.maxMinutes,'Tempo médio de entrega fora do limite.');if(!Number.isInteger(t.averageDeliveryMinutes))fail('Tempo médio de entrega deve usar minutos inteiros.');}
     if(!['kitchen','waiting'].includes(t.volumeMetric))fail('Métrica de volume inválida.');
     finite(t.maxFee,0,1000,'Teto da taxa inválido.');
     finite(t.decreaseStepFee,0.01,1000,'Passo de redução da taxa inválido.');
@@ -82,7 +83,8 @@ export function validate(c) {
     if(!Number.isInteger(t.maxMinutes)||!Array.isArray(t.bands)||!t.bands.length) fail('Faixas ou limite inválidos.');
     let km=0;
     for(const b of t.bands) {
-      finite(b.km,0.1,100,'Raio inválido.'); finite(b.minutes,1,t.deliveryMode==='average'?1440:t.maxMinutes,'Tempo-base fora do limite.');
+      if(t.deliveryMode==='distance'){finite(b.distanceMinutes,0,1440,'Adicional de distância inválido.');if(!Number.isInteger(b.distanceMinutes))fail('Use minutos inteiros no adicional por distância.');if(deliveryMinutes(t,b)>t.maxMinutes)fail('Entrega média mais distância supera o limite de prazo.');}
+      finite(b.km,0.1,100,'Raio inválido.'); finite(b.minutes,1,t.deliveryMode!=='bands'?1440:t.maxMinutes,'Tempo-base fora do limite.');
       if(b.km<=km||!Number.isInteger(b.minutes)) fail('Ordene os raios e use minutos inteiros.');
       km=b.km;
       if(b.fee!==null){finite(b.fee,0,1000,'Taxa inválida.');if(!cents(b.fee))fail('Use até duas casas decimais na taxa-base.');}
@@ -161,7 +163,8 @@ export function volumeRule(target,snapshot){
   return {volume,threshold:rule?.minOrders??null,extraMinutes:rule?.extraMinutes||0,extraFee:rule?.extraFee||0};
 }
 export function adjustment(target,snapshot,state,c,now=Date.now()){
-  const productionMinutes=demand(snapshot,c,now),rule=volumeRule(target,snapshot);
+  const kitchenAge=demand(snapshot,c,now),rule=volumeRule(target,snapshot);
+  const productionMinutes=selectedAge(target,snapshot,c,now,kitchenAge);
   const desiredTime=timeContribution(target,productionMinutes,rule);
   const next=nextOffset(desiredTime,state,c);
   const fee=nextOffset(Math.round((target.feeMode==='demand'?rule.extraFee:0)*100),
@@ -172,6 +175,7 @@ export function adjustment(target,snapshot,state,c,now=Date.now()){
 }
 
 export function deliveryMinutes(target,band){
+  if(target.deliveryMode==='distance')return target.averageDeliveryMinutes+(band.distanceMinutes??band.minutes-target.averageDeliveryMinutes);
   return target.deliveryMode==='average'?target.averageDeliveryMinutes:band.minutes;
 }
 export function timeContribution(target,productionMinutes,rule){
@@ -179,4 +183,18 @@ export function timeContribution(target,productionMinutes,rule){
   if(target.timeMode==='volume')return rule.extraMinutes;
   if(target.timeMode==='combined')return productionMinutes+rule.extraMinutes;
   fail('Modo de cálculo de tempo inválido.');
+}
+
+export function selectedAge(target,snapshot,c,now=Date.now(),kitchenAge=demand(snapshot,c,now)){
+  if(target.timeMode==='volume'||target.volumeMetric!=='waiting')return kitchenAge;
+  const w=snapshot.waiting;
+  if(!w?.complete||w.error)fail(w?.error||'Leitura completa de Aguardando entrega necessária para calcular a idade.');
+  const stage=snapshot.stages?.find(s=>s.stage==='Aguardando entrega');
+  if(!stage||stage.count!==w.count)fail('Contador de Aguardando entrega inconsistente.');
+  return Math.max(kitchenAge,demand({...snapshot,...w,capturedAt:snapshot.capturedAt},c,now));
+}
+// Um passo por ciclo, a partir do valor realmente lido no Portal.
+export function stepRows(desired,current,step,instant=desired){
+  if(!Array.isArray(current)||current.length!==desired.length||desired.some((r,i)=>r.km!==current[i].km))fail('Faixas do iFood e do cadastro não correspondem.');
+  return desired.map((r,i)=>{let minutes=Math.min(current[i].minutes+step,Math.max(current[i].minutes-step,r.minutes));if(minutes>current[i].minutes)minutes=Math.min(minutes,Math.max(current[i].minutes,instant[i].minutes));return {...r,minutes};});
 }

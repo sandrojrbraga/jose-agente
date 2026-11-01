@@ -1,7 +1,7 @@
-import {defaults,migrate,validate,inSchedule,demand,adjustment} from './core.mjs';
+import {defaults,migrate,validate,inSchedule,demand,adjustment,stepRows,plan} from './core.mjs';
 import {auditSaipos,auditIfood} from './diagnostics.mjs';
 let running=false;
-const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status','portal']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{},portal:d.portal||null};};
+const get=async()=>{const d=await chrome.storage.local.get(['config','states','logs','status','portal','timeEdits']);return {config:migrate(d.config),states:d.states||{},logs:d.logs||[],status:d.status||{},portal:d.portal||null,timeEdits:d.timeEdits||{}};};
 async function log(event){const {logs}=await get();await chrome.storage.local.set({logs:[{at:new Date().toISOString(),...event},...logs].slice(0,250)});}
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function bind(kind,id,tabId){const {config}=await get();const item=config[kind].find(x=>x.id===id);if(item)item.tabId=tabId;await chrome.storage.local.set({config});}
@@ -14,7 +14,7 @@ async function send(tabId,m){
   if(m.type!=='SAIPOS_READ'&&m.type!=='JOSE_INSPECT')await send(tabId,{type:'JOSE_INSPECT'});
   try {
     const r=await chrome.tabs.sendMessage(tabId,m);
-    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===6))return r;
+    if(r&&(m.type!=='JOSE_INSPECT'||r.readerVersion===7)&&(m.type!=='SAIPOS_READ'||r.readerVersion===3))return r;
     if(m.type==='JOSE_EXECUTE')throw Error('Resultado do comando desconhecido. Use Revalidar, sem reenviar.');
   }catch(e){
     if(m.type==='JOSE_EXECUTE'&&!/Receiving end does not exist|Could not establish connection/i.test(e.message))throw e;
@@ -22,7 +22,7 @@ async function send(tabId,m){
   const files=m.type==='SAIPOS_READ'?['saipos-reader.js','saipos.js']:['ifood-dom.js','ifood.js'];
   await chrome.scripting.executeScript({target:{tabId},files});
   const r=await chrome.tabs.sendMessage(tabId,m);
-  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==6))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
+  if(!r||(m.type==='JOSE_INSPECT'&&r.readerVersion!==7)||(m.type==='SAIPOS_READ'&&r.readerVersion!==3))throw Error('Leitor não respondeu na versão atual. Recarregue a aba do site.');
   return r;
 }
 async function verifyReload(target,expected){
@@ -85,18 +85,22 @@ async function tick(manual=false){
       }
       catch(e){sources[s.id]={error:e.message};}
     }
-    if(c.profile?.role!=='reader')await readPortal(c);
+    const portal=c.profile?.role!=='reader'?await readPortal(c):null;
     const results=[];
     for(const t of c.targets.filter(t=>t.enabled)){
       const key=c.mode+':'+t.id,st=states[key]||{};
       try {
         if(st.pending)throw Error('Resultado anterior pendente. Use Revalidar antes de outro envio.');
         const source=sources[t.sourceId];if(!source||source.error){st.lowerCount=0;st.feeLowerCount=0;states[key]=st;throw Error(source?.error||'Sem fonte.');}
-        const calc=adjustment(t,source,st,c),{next,rows,productionMinutes:desired}=calc;
+        const calc=adjustment(t,source,st,c),{next,rows:adjustmentRows,productionMinutes:desired}=calc;
+        const desiredRows=plan(t,calc.desiredTime,next.feeOffsetCents/100);
+        const rows=portal?.ok?stepRows(adjustmentRows,portal.rows,t.adjustStepMinutes,desiredRows):adjustmentRows;
+        const breakdown={mode:t.timeMode,scope:t.volumeMetric,volume:calc.volume,oldestMinutes:desired,preparationMinutes:next.offset,desiredPreparationMinutes:calc.desiredTime,deliveryAverage:t.averageDeliveryMinutes,step:t.adjustStepMinutes};
         if(c.mode==='simulate'){
           // Simulação não muda o Portal nem o estado de execução real.
-          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows});continue;
+          states[key]={...next};results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,breakdown,desiredRows,rows});continue;
         }
+        if(!portal?.ok)throw Error(portal?.error||'Leia a tabela iFood antes de ajustar.');
         if(!(await get()).config.enabled||!inSchedule(Date.now(),c))break;
         let bound;try{bound=await chrome.tabs.get(t.tabId);}catch{}
         if(!bound?.url?.startsWith('https://portal.ifood.com.br/merchant-delivery-core-portal-experience')){
@@ -115,8 +119,9 @@ async function tick(manual=false){
         if(!r.unchanged){const check=await verifyReload(t,r.expected);if(!check.ok)throw Error(check.error||'Prazo não confirmado após recarga.');}
         await readPortal(c);
         states[key]={...next};
-        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,rows,verified:true,changed:!r.unchanged});
-        await log({storeId:t.id,type:r.unchanged?'unchanged':'saved',jobId:job.id,before:r.before,after:r.expected});
+        results.push({id:t.id,name:t.name,mode:c.mode,productionMinutes:desired,timeMode:t.timeMode,preparationMinutes:next.offset,volume:calc.volume,threshold:calc.threshold,feeExtra:next.feeOffsetCents/100,breakdown,desiredRows,rows,verified:true,changed:!r.unchanged});
+        if(!r.unchanged){const timeEdits=(await get()).timeEdits;timeEdits[t.id]||={};const at=new Date().toISOString();for(const row of r.expected){const before=r.before?.find(b=>b.km===row.km);if(before&&before.minutes!==row.minutes)timeEdits[t.id][String(row.km)]={km:row.km,before:before.minutes,after:row.minutes,at};}await chrome.storage.local.set({timeEdits});}
+        await log({storeId:t.id,type:r.unchanged?'unchanged':'saved',breakdown,jobId:job.id,before:r.before,after:r.expected});
       }catch(e){if(states[key]){states[key].lowerCount=0;states[key].feeLowerCount=0;}results.push({id:t.id,name:t.name,error:e.message});await log({storeId:t.id,type:'blocked',error:e.message});}
       await chrome.storage.local.set({states});
     }
@@ -139,6 +144,23 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     if(m.type==='READ_IFOOD'){
       if(running)return {busy:true};running=true;
       try{return await readPortal((await get()).config);}finally{running=false;}
+    }
+    if(m.type==='LINK_ACCOUNTS'){
+      if(running)throw Error('Aguarde o ciclo atual.');running=true;
+      try{
+        const start=Date.now(),d=await get(),c=d.config,t=c.targets.find(t=>t.id===String(m.targetId||c.profile.targetId));
+        if(Object.values(d.states).some(s=>s.pending))throw Error('Revalide o envio pendente antes de vincular abas.');
+        const source=c.sources.find(s=>s.id===t?.sourceId);if(!source)throw Error('Cadastre e salve a cozinha desta loja antes de vincular.');
+        const kitchens=(await discover()).filter(r=>r.complete&&!r.error&&r.storeId===source.storeId);
+        if(kitchens.length!==1)throw Error('Deixe apenas uma aba Saipos da cozinha esperada aberta neste perfil.');
+        const tabs=await chrome.tabs.query({url:['https://portal.ifood.com.br/merchant-delivery-core-portal-experience*']});
+        if(tabs.length!==1)throw Error('Deixe apenas uma aba iFood na tela de entrega aberta neste perfil.');
+        const inspected=auditIfood(await send(tabs[0].id,{type:'JOSE_INSPECT'}),t,null,c);
+        source.tabId=kitchens[0].tabId;t.tabId=tabs[0].id;c.profile.targetId=t.id;c.enabled=false;c.mode='simulate';c.targets.forEach(x=>x.enabled=x.id===t.id);
+        const portal={...inspected,targetId:t.id,tabId:t.tabId,latencyMs:Date.now()-start};
+        await chrome.storage.local.set({config:validate(c),states:{},portal,status:{at:Date.now(),message:'Duas abas vinculadas. Monitoramento pausado para conferência.',sources:{[source.id]:{...kitchens[0],age:demand(kitchens[0],c)}},results:[]}});
+        return {ok:true,config:c};
+      }finally{running=false;}
     }
     if(m.type==='TEST_SAIPOS'||m.type==='TEST_IFOOD'){
       if(running)throw Error('Aguarde o ciclo atual.');running=true;

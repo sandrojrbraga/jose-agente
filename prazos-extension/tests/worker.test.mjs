@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaults} from '../extension/core.mjs';
-let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false,legacyIfood=false;
+let listener,store={},messages=[],alarms=[],injections=[],disconnected=false,executionPortClosed=false,legacyIfood=false,inventory=[],changedWrite=false;
 const clone=x=>structuredClone(x);
 globalThis.chrome={
   storage:{local:{get:async keys=>Object.fromEntries(keys.filter(k=>k in store).map(k=>[k,clone(store[k])])),set:async patch=>Object.assign(store,clone(patch))}},
@@ -9,13 +9,13 @@ globalThis.chrome={
   alarms:{create:async(...a)=>alarms.push(a),onAlarm:{addListener(){}}},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
   scripting:{executeScript:async m=>{injections.push(m);disconnected=false;legacyIfood=false;}},
-  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};throw Error('missing');},query:async()=>[],reload:async()=>{},sendMessage:async(id,m)=>{
+  tabs:{get:async id=>{if(id===1)return {id,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer',status:'complete'};if(id===2)return {id,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience',status:'complete'};throw Error('missing');},query:async q=>inventory.filter(t=>q.url.some(pattern=>t.url.startsWith(pattern.split('*')[0]))),reload:async()=>{},sendMessage:async(id,m)=>{
     messages.push(m);if(disconnected)throw Error('Receiving end does not exist.');
     if(m.type==='JOSE_EXECUTE'&&executionPortClosed)throw Error('The message port closed before a response was received.');
-    if(m.type==='SAIPOS_READ')return {storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
-    if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:true,expected:m.rows.map(b=>({...b,fee:6.99}))};
+    if(m.type==='SAIPOS_READ')return {readerVersion:3,storeId:'65416',capturedAt:Date.now(),complete:true,count:0,cards:[]};
+    if(m.type==='JOSE_EXECUTE')return {ok:true,unchanged:!changedWrite,before:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes-1,fee:6.99})),expected:m.rows.map(b=>({...b,fee:6.99}))};
     if(m.type==='JOSE_VERIFY')return {ok:true};
-    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:6,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]};
+    if(m.type==='JOSE_INSPECT')return {readerVersion:legacyIfood?undefined:7,capturedAt:Date.now(),deliveryPage:true,name:'Pizza Pizza - Maraponga',unsaved:false,rows:store.config.targets[0].bands.map(b=>({km:b.km,minutes:b.minutes,fee:6.99}))};
     throw Error('Unexpected message');
   }}
 };
@@ -27,7 +27,7 @@ function setup(mode='simulate'){
   // Manual simulation ignores the clock; live tests set a window containing now.
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:c.timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
   if(p==='23:59')c.schedule={days:[0,1,2,3,4,5,6],start:'23:58',end:'23:57'};
-  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;
+  store={config:c,states:{},logs:[]};messages=[];injections=[];disconnected=false;executionPortClosed=false;legacyIfood=false;inventory=[];changedWrite=false;
 }
 test('simulation reads both platforms but never sends write commands',async()=>{setup();const r=await call({type:'TICK'});assert.equal(r.results[0].mode,'simulate');assert.deepEqual(messages.map(m=>m.type),['SAIPOS_READ','JOSE_INSPECT']);});
 test('paused live mode does not execute even on manual tick',async()=>{setup('live');store.config.enabled=false;await call({type:'TICK'});assert.equal(messages.length,0);});
@@ -45,7 +45,7 @@ test('reader profile cannot execute even if old settings requested live',async()
 test('executor-only profile reports missing bridge instead of using other profiles magically',async()=>{setup();store.config.profile.role='executor';await call({type:'TICK'});assert.equal(messages.length,0);assert.match(store.status.message,/não conectada/);});
 
 test('fee hysteresis survives worker state and recovery; live job is pinned to profile',async()=>{
-  setup('live');const t=store.config.targets[0];Object.assign(t,{feeMode:'demand',volumeRules:[{minOrders:5,extraMinutes:0,extraFee:3}],bands:[{km:.5,minutes:19,fee:6.99}]});
+  setup('live');const t=store.config.targets[0];Object.assign(t,{feeMode:'demand',volumeRules:[{minOrders:5,extraMinutes:0,extraFee:3}],bands:[{km:.5,minutes:19,distanceMinutes:4,fee:6.99}]});
   store.states['live:3148479']={offset:0,lowerCount:0,feeOffsetCents:300,feeLowerCount:0};
   await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,9.99);assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').target.profilePinned,true);
   messages=[];await call({type:'TICK'});assert.equal(messages.find(m=>m.type==='JOSE_EXECUTE').rows[0].fee,8.99);
@@ -59,3 +59,20 @@ test('source failure resets fee reduction streak while preserving previous fee',
 test('legacy iFood content upgrades with inspection before a fee-writing command',async()=>{setup('live');legacyIfood=true;await call({type:'TICK'});assert.deepEqual(injections[0].files,['ifood-dom.js','ifood.js']);const types=messages.map(m=>m.type);assert.deepEqual(types,['SAIPOS_READ','JOSE_INSPECT','JOSE_INSPECT','JOSE_INSPECT','JOSE_EXECUTE','JOSE_INSPECT']);});
 test('direct iFood read works paused, reports latency and never sends write commands',async()=>{setup();store.config.enabled=false;const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,true);assert.equal(r.targetId,'3148479');assert.equal(r.rows[0].fee,6.99);assert.ok(r.latencyMs>=0);assert.deepEqual(messages.map(m=>m.type),['JOSE_INSPECT']);assert.equal(store.config.enabled,false);assert.equal(store.portal.tabId,2);});
 test('wrong-store iFood read replaces previous green state with explicit failure',async()=>{setup();await call({type:'READ_IFOOD'});store.config.targets[0].name='Pizza Pizza - Parangaba';const r=await call({type:'READ_IFOOD'});assert.equal(r.ok,false);assert.match(r.error,/Loja diferente/);assert.equal(store.portal.ok,false);assert.equal(store.portal.rows,undefined);assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);});
+
+test('one-click link validates both pages and binds them atomically while paused',async()=>{
+ setup();store.config.sources[0].tabId=null;store.config.targets[0].tabId=null;
+ inventory=[{id:1,url:'https://conta.saipos.com/#/app/sale/delivery/kanban/search-customer'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
+ const r=await call({type:'LINK_ACCOUNTS',targetId:'3148479'});assert.equal(r.ok,true);assert.equal(store.config.sources[0].tabId,1);assert.equal(store.config.targets[0].tabId,2);assert.equal(store.config.enabled,false);assert.equal(store.config.mode,'simulate');assert.equal(messages.some(m=>m.type==='JOSE_EXECUTE'),false);
+});
+test('duplicate tabs and wrong store prevent partial binding',async()=>{
+ setup();store.config.sources[0].tabId=null;store.config.targets[0].tabId=null;
+ inventory=[{id:1,url:'https://conta.saipos.com/#/kanban'},{id:2,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'},{id:3,url:'https://portal.ifood.com.br/merchant-delivery-core-portal-experience'}];
+ let r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/apenas uma aba iFood/);assert.equal(store.config.sources[0].tabId,null);
+ inventory.pop();store.config.targets[0].name='Pizza Pizza - Parangaba';r=await call({type:'LINK_ACCOUNTS'});assert.match(r.error,/Loja diferente/);assert.equal(store.config.sources[0].tabId,null);assert.equal(store.config.targets[0].tabId,null);
+});
+
+test('confirmed time edits survive saving settings independently of rolling logs',async()=>{
+ setup('live');changedWrite=true;await call({type:'TICK'});assert.equal(store.timeEdits['3148479']['0.5'].before,14);assert.equal(store.timeEdits['3148479']['0.5'].after,15);assert.ok(store.timeEdits['3148479']['0.5'].at);
+ store.logs=[];const saved=await call({type:'SAVE',config:store.config});assert.equal(saved.ok,true);assert.equal(store.timeEdits['3148479']['0.5'].after,15);
+});

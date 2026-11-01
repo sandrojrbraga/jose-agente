@@ -1,10 +1,10 @@
-import {demand,volumeRule,deliveryMinutes,timeContribution} from './core.mjs';
+import {demand,volumeRule,deliveryMinutes,timeContribution,selectedAge} from './core.mjs';
 export const norm=s=>String(s||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
 export function auditSaipos(snapshot,source,config,now=Date.now()){
   if(snapshot?.error)throw Error(snapshot.error);
   if(snapshot?.storeId!==source.storeId)throw Error(`ID diferente: esperado ${source.storeId}, recebido ${snapshot?.storeId||'não identificado'}.`);
   const productionMinutes=demand(snapshot,config,now);
-  return {ok:true,readAt:snapshot.capturedAt,storeId:snapshot.storeId,productionMinutes,count:snapshot.count,stages:snapshot.stages||[],readerVersion:snapshot.readerVersion};
+  return {ok:true,readAt:snapshot.capturedAt,storeId:snapshot.storeId,productionMinutes,count:snapshot.count,stages:snapshot.stages||[],waiting:snapshot.waiting,readerVersion:snapshot.readerVersion};
 }
 export function auditIfood(snapshot,target,sourceTest,config,now=Date.now()){
   if(snapshot?.error)throw Error(snapshot.error);
@@ -20,7 +20,7 @@ export function auditIfood(snapshot,target,sourceTest,config,now=Date.now()){
   }
   let productionMinutes=null,rule=null;
   const source=config.sources.find(s=>s.id===target.sourceId);
-  if(sourceTest?.ok&&source&&sourceTest.storeId===source.storeId&&now-sourceTest.readAt<=config.staleSeconds*1000){productionMinutes=sourceTest.productionMinutes;rule=volumeRule(target,sourceTest);}
+  if(sourceTest?.ok&&source&&sourceTest.storeId===source.storeId&&now-sourceTest.readAt<=config.staleSeconds*1000){productionMinutes=selectedAge(target,{...sourceTest,complete:true,capturedAt:sourceTest.readAt,cards:[],count:sourceTest.count},config,now,sourceTest.productionMinutes);rule=volumeRule(target,sourceTest);}
   return {ok:true,readAt:snapshot.capturedAt,name:snapshot.name,configuredStoreId:target.id,
     selectedIdVerified:false,identityNote:'Nome conferido. O ID selecionado não é exibido no cabeçalho; o ID acima é o cadastro esperado, não uma leitura direta do Portal.',
     productionMinutes,rows:snapshot.rows.map(r=>{

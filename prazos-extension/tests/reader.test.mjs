@@ -14,3 +14,8 @@ test('DOM reader extracts real Saipos tooltip ID, clocks and counts without cust
 test('incomplete rendered kitchen never becomes an empty queue',()=>{assert.throws(()=>read(fixture({partial:true})),/parcial/);});
 test('missing store identity and active search filters block reading',()=>{assert.throws(()=>read(fixture({missingId:true})),/ID Saipos/);assert.throws(()=>read(fixture({filter:true})),/filtros/);});
 test('listener injection is idempotent and returns explicit errors',()=>{const callbacks=[],window={},context={window,document:fixture({missingId:true}),location:{hash:'#/kanban/'},chrome:{runtime:{id:'extension',onMessage:{addListener:l=>callbacks.push(l),removeListener:()=>{}}}}};vm.runInNewContext(reader,context);vm.runInNewContext(listener,context);vm.runInNewContext(listener,context);assert.equal(callbacks.length,1);let response;callbacks[0]({type:'SAIPOS_READ'},{id:'extension'},r=>response=r);assert.equal(response.complete,false);assert.match(response.error,/ID Saipos/);});
+
+test('waiting column exports only clocks and IDs when complete; partial waiting is explicit',()=>{
+ const doc=fixture(),headings=doc.querySelectorAll();headings[1].parentElement={querySelector:()=>({innerText:'1'}),querySelectorAll:()=>[{innerText:'Cliente teste\n31/out, 20:20 (50m)\nDesde 20:50 (20m)\nTelefone privado',querySelector:()=>({id:'waiting-1'})}]};
+ doc.querySelectorAll=()=>headings;const snapshot=read(doc);assert.equal(snapshot.waiting.complete,true);assert.equal(snapshot.waiting.cards[0].id,'waiting-1');assert.equal(snapshot.waiting.cards[0].since,'Desde 20:50 (20m)');assert.equal(JSON.stringify(snapshot).includes('Telefone'),false);assert.equal(read(fixture()).waiting.complete,false);
+});
