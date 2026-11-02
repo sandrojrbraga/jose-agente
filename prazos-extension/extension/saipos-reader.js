@@ -29,8 +29,8 @@
       const cards=elements.map(e=>{
         const checkbox=e.querySelector('input[type="checkbox"]'),id=checkbox?.id||checkbox?.getAttribute('data-qa');
         if(!id||seen.has(id))throw Error('Cartão sem identificador único ou duplicado.');seen.add(id);
-        const text=e.innerText;
-        return {id,fulfillment:fulfillment(e),created:text.match(/\d{1,2}\/\w{3},?\s*\d{2}:\d{2}/)?.[0],since:text.match(/Desde\s+\d{2}:\d{2}[^\n]*/)?.[0]};
+        const text=e.innerText,since=text.match(/Desde[^\n]*/)?.[0];
+        return {id,fulfillment:fulfillment(e),created:text.match(/\d{1,2}\/\w{3},?\s*\d{2}:\d{2}/)?.[0],since,clockMode:/Desde\s+\d{2}:\d{2}/.test(since||'')?'clock':/^Desde\s*\((?:(\d+)h)?\s*(?:(\d+)m)?\)\s*$/.test(since||'')?'elapsed':'missing'};
       });return {count,cards,complete:true};
     }
     const {count,cards}=column('Cozinha');
@@ -42,5 +42,5 @@
       if(!Number.isInteger(value)||value<0) throw Error('Contador inválido: '+stage);
       return {stage,count:value};
     });
-    return {storeId,readerVersion:5,capturedAt,complete:true,count,cards,stages,waiting};
+    return {storeId,readerVersion:6,capturedAt,complete:true,count,cards,stages,waiting};
 }};})();

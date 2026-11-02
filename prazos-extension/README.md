@@ -1,4 +1,4 @@
-# José — Tempo e taxa Saipos/iFood · v0.10.1
+# José — Tempo e taxa Saipos/iFood · v0.10.2
 
 Extensão Chrome Manifest V3. Cálculo local, sem IA, OpenRouter, Toqan ou consumo de tokens. O executor José é integrado; não usa o antigo comando.json da raiz do repositório. Catálogo de 11 lojas iFood e até 5 cozinhas Saipos, com regras independentes por loja.
 
@@ -271,3 +271,14 @@ Antes de criar um comando de escrita, o worker agora compara os valores calculad
 Quando o menu conhecido da loja estiver aberto e o fundo não for clicável, o leitor usa o mesmo botão do cabeçalho que abre/fecha esse menu. Se o fundo existir, tenta fechá-lo por ele; somente se o menu continuar aberto usa a alternativa. Aguarda o fechamento antes de continuar. Outras janelas continuam bloqueando. Todos os cliques preservam a espera de 3 segundos e a conferência de identidade. Protocolo iFood 12; Saipos continua 5.
 
 Os testes simulam layout sem fundo clicável e ciclo com tabela já correta. O diagnóstico demonstra os dois salvamentos da versão anterior; não constitui validação instalada desta atualização. Atualização no mesmo diretório preserva dados normais, mas configuração anônima é temporária e pode ser perdida ao recarregar. Antes de atualizar em anônimo, exporte a configuração para reaplicá-la se necessário. Após atualizar, conferir/revalidar eventual pendência e iniciar o monitoramento.
+
+
+## Correção 0.10.2 — cartões Saipos com Desde (11m) sem HH:mm
+
+O diagnóstico da loja Parangaba, fonte P8 65416, apresentou Horário de produção incompleto. A inspeção somente de leitura da aba Saipos encontrou cartões com data de criação normal, mas a permanência renderizada como Desde (11m) e Desde (07m), sem HH:mm. O leitor anterior exigia HH:mm para extrair Desde e o cálculo recusava o cartão inteiro.
+
+O leitor preserva agora a linha Desde completa e classifica o relógio como clock, elapsed ou missing. Se houver HH:mm, mantém o cálculo e a validação existentes. Sem HH:mm, aceita exclusivamente uma duração explícita Desde (Xm) ou Desde (XhYm), inclusive zero, desde que exista data de criação válida, leitura recente, duração até 24h e compatibilidade com a idade do pedido (tolerância de 3 minutos). Não usa a idade desde a compra como substituto do tempo na etapa, não assume zero e não ignora cartões sem evidência.
+
+Erro em um cartão passa a incluir seu identificador técnico para localizar o problema. O diagnóstico resume quantos relógios de Cozinha usaram duração explícita. Protocolo Saipos 6 atualiza o leitor de abas já abertas; protocolo iFood permanece 12.
+
+Testes cobrem os exemplos reais, zero, horas, mistura de formatos, duração impossível, ausência de relógio e leitura vencida. A inspeção não mudou pedidos ou prazos. A instalação atualizada ainda precisa ser validada. Esta atualização inclui os ciclos sem cliques quando a tabela já está correta, fechamento alternativo do menu e espera de 3 segundos. Atualizar na mesma pasta sem remover a extensão; exportar configuração antes de recarregar no ambiente anônimo, cuja configuração é temporária. Atualizações pausam o monitoramento.

@@ -25,3 +25,24 @@ test('migration preserves customized values and pauses before live writes',()=>{
 test('distance mismatch names missing and extra radii for actionable configuration repair',()=>{
  assert.throws(()=>stepRows([{km:.5,minutes:20},{km:7,minutes:50}],[{km:.5,minutes:20},{km:6,minutes:40}],3),/Somente no cadastro: 7 km.*Faltam no cadastro: 6 km/);
 });
+
+test('Saipos Desde elapsed-only field supports observed 11m and 07m without treating creation as production',()=>{
+ const at=Date.parse('2026-11-02T00:08:00Z'),zone='America/Fortaleza';
+ assert.equal(productionAge({created:'01/nov, 20:56',since:'Desde (11m)'},at,zone),11);
+ assert.equal(productionAge({created:'01/nov, 21:00',since:'Desde (07m)'},at,zone),7);
+ assert.equal(productionAge({created:'01/nov, 21:08',since:'Desde (0m)'},at,zone),0);
+ assert.equal(productionAge({created:'01/nov, 19:00',since:'Desde (1h07m)'},at,zone),67);
+});
+test('elapsed-only production rejects absent, malformed, stale and incompatible evidence',()=>{
+ const at=Date.parse('2026-11-02T00:08:00Z'),c=defaults(),card={id:'example-clock',created:'01/nov, 21:00',since:'Desde (07m)'};
+ assert.throws(()=>productionAge({...card,since:'Desde'},at,c.timezone),/incompleto/);
+ assert.throws(()=>productionAge({...card,created:undefined},at,c.timezone),/incompleto/);
+ assert.throws(()=>productionAge({...card,since:'Desde (50m)'},at,c.timezone),/incompatível/);
+ assert.throws(()=>productionAge({...card,since:'Desde (NaNm)'},at,c.timezone),/incompleto/);
+ assert.throws(()=>demand({complete:true,capturedAt:at-91000,count:1,cards:[card]},c,at),/vencida/);
+ assert.throws(()=>demand({complete:true,capturedAt:at,count:1,cards:[{...card,since:''}]},c,at),/Cartão: example-clock/);
+});
+test('mixed complete and elapsed-only stage clocks select the actual largest stage duration',()=>{
+ const at=Date.parse('2026-11-02T00:08:00Z'),c=defaults();
+ assert.equal(demand({complete:true,capturedAt:at,count:2,cards:[{created:'01/nov, 20:43',since:'Desde 20:44 (24m)'},{created:'01/nov, 20:56',since:'Desde (11m)'}]},c,at),24);
+});

@@ -120,11 +120,18 @@ const months={jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:1
 export function productionAge(card,now,timezone) {
   const p=localParts(now,timezone), m=card.created?.match(/(\d{1,2})\/(\w{3}),?\s*(\d{2}):(\d{2})/i);
   const s=card.since?.match(/Desde\s+(\d{2}):(\d{2})/i);
-  if(!m||!s||!months[m[2].toLowerCase()]) fail('Horário de produção incompleto.');
-  if(+m[3]>23||+m[4]>59||+s[1]>23||+s[2]>59) fail('Relógio inválido.');
+  const elapsed=card.since?.match(/^Desde\s*\((?:(\d+)h)?\s*(?:(\d+)m)?\)\s*$/i);
+  if(!m||!months[m[2].toLowerCase()]||(!s&&(!elapsed||(!elapsed[1]&&!elapsed[2])))) fail('Horário de produção incompleto.');
+  if(+m[3]>23||+m[4]>59||(s&&(+s[1]>23||+s[2]>59))) fail('Relógio inválido.');
   const localNow=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute);
   let creation=Date.UTC(p.year,months[m[2].toLowerCase()]-1,+m[1],+m[3],+m[4]);
   if(creation>localNow+86400000) creation=Date.UTC(p.year-1,months[m[2].toLowerCase()]-1,+m[1],+m[3],+m[4]);
+  if(!s){
+    // Alguns cartões renderizam apenas Desde (11m). Isso é permanência na etapa, não idade desde a compra.
+    const age=+(elapsed[1]||0)*60 + +(elapsed[2]||0),creationAge=(localNow-creation)/60000;
+    if(age>1440||creationAge<0||creationAge>1440||age>creationAge+3)fail('Duração de produção incompatível com a data do pedido.');
+    return age;
+  }
   let entered=creation-(+m[3]*60 + +m[4])*60000+(+s[1]*60 + +s[2])*60000;
   if(entered<creation) entered+=86400000;
   const age=(localNow-entered)/60000;
@@ -136,7 +143,7 @@ export function productionAge(card,now,timezone) {
 export function demand(snapshot,c,now=Date.now()) {
   if(!snapshot||snapshot.error||snapshot.complete!==true||!Number.isFinite(snapshot.capturedAt)||snapshot.capturedAt>now+5000||now-snapshot.capturedAt>c.staleSeconds*1000) fail(snapshot?.error||'Leitura ausente, incompleta ou vencida.');
   if(snapshot.count!==snapshot.cards.length) fail('Quantidade de cartões diverge do contador.');
-  return Math.max(0,...snapshot.cards.map(x=>productionAge(x,now,c.timezone)));
+  return Math.max(0,...snapshot.cards.map(x=>{try{return productionAge(x,now,c.timezone);}catch(e){fail(e.message+(x.id?' Cartão: '+x.id+'.':''));}}));
 }
 export function nextOffset(desired,state,c) {
   const previous=state.offset;

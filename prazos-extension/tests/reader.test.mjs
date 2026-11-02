@@ -22,7 +22,7 @@ test('waiting column exports only clocks and IDs when complete; partial waiting 
 test('regression: anonymous Saipos has tooltip on header span itself, not on a child',()=>{
  const doc=fixture({missingId:true}),original=doc.querySelector;
  doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:name=>name==='uib-tooltip'?'Pizza Pizza 08 [65416]':null}:original(q);
- const snapshot=read(doc);assert.equal(snapshot.storeId,'65416');assert.equal(snapshot.readerVersion,5);assert.equal(snapshot.count,1);
+ const snapshot=read(doc);assert.equal(snapshot.storeId,'65416');assert.equal(snapshot.readerVersion,6);assert.equal(snapshot.count,1);
 });
 test('header with a different kitchen ID never falls back to expected P8 ID',()=>{
  const doc=fixture(),original=doc.querySelector;doc.querySelector=q=>q==='[name="current-store-name-header-button"]'?{getAttribute:()=> 'Outra cozinha [99999]'}:original(q);
@@ -36,4 +36,9 @@ test('rendered Saipos type separates delivery and pickup even when both have Del
   headings[1].parentElement={querySelector:()=>({innerText:'1'}),querySelectorAll:()=>[card]};
   assert.equal(read(doc).waiting.cards[0].fulfillment,expected);
  }
+});
+
+test('DOM reader retains elapsed-only Desde fragments instead of dropping them',()=>{
+ const doc=fixture();doc.querySelectorAll()[0].parentElement.querySelectorAll()[0].innerText='01/nov, 20:56 (12m)\nDesde (11m)';
+ const s=read(doc);assert.equal(s.cards[0].since,'Desde (11m)');assert.equal(s.cards[0].clockMode,'elapsed');assert.equal(s.readerVersion,6);
 });
