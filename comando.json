@@ -1,5 +1,12 @@
 {
-  "id": "vazio-2026-11-06-instalacao",
-  "loja": "nenhuma",
-  "comandos": []
+  "id": "nav-teste-2026-11-06-1003",
+  "loja": "Pizza Pizza (teste de navegação)",
+  "comandos": [
+    { "acao": "ler", "max": 3000 },
+    { "acao": "foto" },
+    { "acao": "clicar_texto", "texto": "conversas com clientes" },
+    { "acao": "esperar", "ms": 3500 },
+    { "acao": "ler", "max": 3000 },
+    { "acao": "foto" }
+  ]
 }
