@@ -1,6 +1,16 @@
 {
-  "id": "kanban-real-2026-11-06-1722",
+  "id": "atendimento-20261106-2000",
   "loja": "Pizza Pizza (11 lojas)",
-  "receita": "ler_kanban",
-  "args": {}
+  "comandos": [
+    {"acao": "ir", "url": "https://gestordepedidos.ifood.com.br/#/home/order-display/kanban"},
+    {"acao": "esperar", "ms": 6000},
+    {"acao": "ler", "max": 12000},
+    {"acao": "foto"},
+    {"acao": "rolar", "delta": 900},
+    {"acao": "ler", "max": 12000},
+    {"acao": "clicar_texto", "texto": "conversas com clientes"},
+    {"acao": "esperar", "ms": 4000},
+    {"acao": "ler", "max": 8000},
+    {"acao": "foto"}
+  ]
 }
