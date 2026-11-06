@@ -1,11 +1,5 @@
 {
-  "id": "teste-canal-001",
-  "loja": "TESTE Canal Maracanaú",
-  "comandos": [
-    { "acao": "ir", "url": "http://127.0.0.1:8801/avaliacoes.html" },
-    { "acao": "esperar_seletor", "seletor": ".review-card", "ms": 8000 },
-    { "acao": "rolar", "delta": 700 },
-    { "acao": "rolar", "delta": 700 },
-    { "acao": "ler", "max": 8000 }
-  ]
+  "id": "vazio-2026-11-06-instalacao",
+  "loja": "nenhuma",
+  "comandos": []
 }
