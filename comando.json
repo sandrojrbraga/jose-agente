@@ -1,14 +1,14 @@
 {
-  "id": "avaliacoes-20261109-1000",
+  "id": "atendimento-20261109-1400",
   "loja": "Pizza Pizza (11 lojas)",
   "comandos": [
     {
       "acao": "ir",
-      "url": "https://portal.ifood.com.br/reviews/performance"
+      "url": "https://gestordepedidos.ifood.com.br/#/home/order-display/kanban"
     },
     {
       "acao": "esperar",
-      "ms": 8000
+      "ms": 6000
     },
     {
       "acao": "ler",
@@ -18,31 +18,24 @@
       "acao": "foto"
     },
     {
-      "acao": "clicar_texto",
-      "texto": "Avaliações e Comentários"
-    },
-    {
-      "acao": "esperar",
-      "ms": 5000
-    },
-    {
-      "acao": "ler",
-      "max": 15000
-    },
-    {
-      "acao": "foto"
-    },
-    {
       "acao": "rolar",
       "delta": 900
     },
     {
+      "acao": "ler",
+      "max": 12000
+    },
+    {
+      "acao": "ir",
+      "url": "https://gestordepedidos.ifood.com.br/#/home/conversations"
+    },
+    {
       "acao": "esperar",
-      "ms": 2500
+      "ms": 4000
     },
     {
       "acao": "ler",
-      "max": 20000
+      "max": 8000
     },
     {
       "acao": "foto"
