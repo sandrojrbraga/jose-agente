@@ -1,0 +1,8 @@
+{
+  "id": "aguardando-primeiro-plano",
+  "janela": "",
+  "ensaio": true,
+  "passos": [
+    { "acao": "janelas" }
+  ]
+}
