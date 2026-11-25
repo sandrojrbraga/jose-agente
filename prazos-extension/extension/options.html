@@ -1,0 +1,19 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>José — Prazos</title><link rel="stylesheet" href="style.css"></head><body><main>
+<header><div><h1>José · Prazos de entrega</h1><p class="muted">Saipos → cálculo local → executor iFood</p></div><button id="pause" class="danger">Pausar</button></header>
+<p class="notice">Primeira versão: comece em simulação. O executor usa o Portal aberto neste perfil Chrome. Computador, Chrome e sessões precisam permanecer ativos. Não há IA nem envio de dados de clientes para GitHub ou Toqan.</p>
+<section><h2>Funcionamento</h2><div class="grid">
+<label>Modo<select id="mode"><option value="simulate">Simulação — sem alterar iFood</option><option value="live">Execução — altera os destinos habilitados</option></select></label>
+<label>Consulta a cada (segundos)<input id="interval" type="number" min="30" max="3600"></label>
+<label>Leitura válida por (segundos)<input id="stale" type="number" min="30" max="600"></label>
+<label>Leituras estáveis antes de reduzir<input id="readings" type="number" min="2" max="20"></label>
+<label>Redução máxima por etapa (minutos)<input id="step" type="number" min="1" max="60"></label>
+<label>Fuso horário<input id="timezone"></label></div>
+<label><input id="enabled" type="checkbox">Ligar automaticamente dentro do horário programado</label>
+<p>Produção = idade da comanda mais antiga em Cozinha, de todos os canais. Prazo = tempo-base da faixa + produção. A redução volta até a base; dados inválidos interrompem a sequência de redução.</p>
+<div class="grid"><label>Início<input id="start" type="time"></label><label>Fim<input id="end" type="time"></label></div><div id="days" class="actions"></div></section>
+<section><h2>Fontes Saipos · até 5</h2><p>Use uma fonte por cozinha. A extensão confere o ID exibido no cabeçalho. Todos os pedidos precisam estar carregados no Kanban, sem filtros de busca.</p><div id="sources"></div><button id="addSource">Adicionar fonte</button></section>
+<section><h2>Destinos iFood · até 4 IDs</h2><p>Os três cadastros P8 abaixo são exemplos de vínculo conhecido. Cadastre outros destinos conforme sua operação. As faixas iniciais são uma proposta, não uma cópia do Portal. Para evitar erro de loja, o José seleciona o ID antes de cada envio.</p><div id="targets"></div><button id="addTarget">Adicionar destino</button></section>
+<section><h2>Aplicar configuração</h2><div class="actions"><button id="save" class="primary">Salvar configuração</button><button id="tick">Consultar agora</button><button id="verify">Revalidar envios pendentes</button><button id="refresh">Atualizar painel</button><button id="export">Exportar configuração</button><label>Importar configuração<input id="import" type="file" accept="application/json"></label></div><p id="message" role="status"></p></section>
+<section><h2>Último ciclo</h2><div id="status"></div><details><summary>Histórico local</summary><pre id="logs"></pre></details></section>
+<footer>Não altera pedidos, cardápio, promoções ou abertura de loja. Taxas são preservadas por padrão. O fim do horário interrompe novos ajustes e mantém o último valor salvo. Versão 0.1.0 — homologação no Portal pendente.</footer>
+</main><script type="module" src="options.mjs"></script></body></html>

@@ -1,0 +1,3 @@
+chrome.runtime.sendMessage({type:'STATE'}).then(d=>{document.getElementById('state').textContent=`${d.config.enabled?'Habilitado':'Pausado'} · ${d.config.mode==='live'?'Execução':'Simulação'}`;document.getElementById('detail').textContent=d.status.at?`${new Date(d.status.at).toLocaleString('pt-BR')}\n${d.status.message}`:'Abra as configurações para começar.';});
+document.getElementById('open').onclick=()=>chrome.runtime.openOptionsPage();
+document.getElementById('pause').onclick=async()=>{const r=await chrome.runtime.sendMessage({type:'PAUSE'});document.getElementById('state').textContent=r.message;};
