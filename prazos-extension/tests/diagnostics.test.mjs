@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {defaults} from '../extension/core.mjs';
+import {auditSaipos,auditIfood} from '../extension/diagnostics.mjs';
+const now=Date.parse('2026-11-01T00:12:00Z'),c=defaults(),t=c.targets.find(t=>t.id==='3148479'),source=c.sources[0];
+const s=()=>({storeId:'65416',capturedAt:now,complete:true,count:1,cards:[{id:'x',created:'31/out, 21:08',since:'Desde 21:08 (04m)'}],stages:[{stage:'Cozinha',count:1}]});
+const portal=()=>({deliveryPage:true,name:'Pizza Pizza - Maraponga',capturedAt:now,unsaved:false,rows:[{km:.5,minutes:25,fee:6.99}]});
+test('Saipos diagnostic independently validates identity, clocks and counts',()=>{assert.equal(auditSaipos(s(),source,c,now).productionMinutes,4);assert.throws(()=>auditSaipos({...s(),storeId:'999'},source,c,now),/ID diferente/);});
+test('iFood diagnostic compares actual fields and never claims selected ID was read',()=>{const r=auditIfood(portal(),t,auditSaipos(s(),source,c,now),c,now);assert.equal(r.ok,true);assert.equal(r.selectedIdVerified,false);assert.equal(r.configuredStoreId,'3148479');assert.equal(r.rows[0].proposedMinutes,19);assert.equal(r.rows[0].difference,6);assert.equal(r.rows[0].fee,6.99);});
+test('different store and unsaved manual changes fail without switching store',()=>{assert.throws(()=>auditIfood({...portal(),name:'Pizza Pizza - Parangaba'},t,null,c,now),/Loja diferente/);assert.throws(()=>auditIfood({...portal(),unsaved:true},t,null,c,now),/não salvas/);});
+test('invalid fields and wrong page block test',()=>{assert.throws(()=>auditIfood({...portal(),deliveryPage:false},t,null,c,now));assert.throws(()=>auditIfood({...portal(),rows:[{km:.5,minutes:NaN,fee:6.99}]},t,null,c,now),/inválida/);});
+test('stale or unrelated source test never contributes production to iFood comparison',()=>{const local=auditSaipos(s(),source,c,now);assert.equal(auditIfood(portal(),t,{...local,readAt:now-100000},c,now).productionMinutes,null);assert.equal(auditIfood(portal(),t,{...local,storeId:'other'},c,now).productionMinutes,null);});
